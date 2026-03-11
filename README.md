@@ -11,6 +11,17 @@
 
 ---
 
+## Windows 一鍵啟動（選用）
+
+若使用 Windows，可直接執行 PowerShell 腳本自動完成所有步驟：
+
+```powershell
+.\start.ps1   # 啟動全系統
+.\stop.ps1    # 停止全系統
+```
+
+---
+
 ## 快速啟動
 
 ### 步驟 1：啟動資料庫
@@ -39,6 +50,7 @@ cp .env.example .env
 ```
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/disaster_report
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxx
+CLAUDE_MODEL=claude-haiku-4-5-20251001   # 可選，預設使用 claude-haiku-4-5-20251001
 ```
 
 ### 步驟 3：安裝後端套件與初始化資料庫
@@ -95,6 +107,7 @@ npm run dev
 | 通報災情 | 透過 AI 對話通報災情，系統自動擷取結構化資料 |
 | 災情列表 | 搜尋、篩選、排序所有災情事件 |
 | 災情詳情 | 查看完整事件資訊、相關通報記錄，並可手動更新 |
+| 使用說明 | 系統操作指引與功能介紹 |
 
 ## 目錄結構
 
@@ -103,7 +116,9 @@ npm run dev
 ├── backend/          # Python FastAPI 後端
 ├── frontend/         # React 前端
 ├── docs/             # 系統設計文件
-└── docker-compose.yml
+├── docker-compose.yml
+├── start.ps1         # Windows 一鍵啟動腳本
+└── stop.ps1          # Windows 一鍵停止腳本
 ```
 
 ## 停止服務

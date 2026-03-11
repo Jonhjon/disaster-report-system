@@ -1,0 +1,25 @@
+# Environment
+backend/.env
+**/.env.local
+
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+backend/.pytest_cache/
+backend/*.egg-info/
+backend/=*
+
+# Alembic (contains DB credentials)
+backend/alembic.ini
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE / OS
+.claude/
+.DS_Store
+Thumbs.db

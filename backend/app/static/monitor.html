@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini API 呼叫監控</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+    header {
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 600; color: #f1f5f9; }
+    header .meta { font-size: 0.8rem; color: #64748b; display: flex; gap: 16px; align-items: center; }
+    header .meta span { display: flex; align-items: center; gap: 4px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+
+    .actions { display: flex; gap: 8px; }
+    button {
+      background: #334155;
+      color: #cbd5e1;
+      border: 1px solid #475569;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: background 0.15s;
+    }
+    button:hover { background: #475569; }
+
+    .stats-bar {
+      display: flex;
+      gap: 12px;
+      padding: 16px 24px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      flex-wrap: wrap;
+    }
+    .stat-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 16px;
+      min-width: 120px;
+    }
+    .stat-card .label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-card .value { font-size: 1.4rem; font-weight: 700; margin-top: 2px; }
+    .val-total { color: #94a3b8; }
+    .val-success { color: #22c55e; }
+    .val-429 { color: #f59e0b; }
+    .val-error { color: #ef4444; }
+    .val-latency { color: #38bdf8; }
+
+    main { padding: 20px 24px; }
+
+    .empty { text-align: center; padding: 60px; color: #475569; font-size: 0.95rem; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    thead th {
+      text-align: left;
+      padding: 10px 12px;
+      color: #64748b;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid #334155;
+      white-space: nowrap;
+    }
+    tbody tr {
+      border-bottom: 1px solid #1e293b;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    tbody tr:hover { background: #1e293b; }
+    tbody tr.expanded { background: #1e293b; }
+    td { padding: 10px 12px; vertical-align: top; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-success { background: #14532d; color: #4ade80; }
+    .badge-429 { background: #451a03; color: #fbbf24; }
+    .badge-error { background: #450a0a; color: #f87171; }
+
+    .latency { font-family: monospace; color: #38bdf8; }
+    .timestamp { color: #64748b; font-size: 0.78rem; white-space: nowrap; }
+    .truncated { color: #cbd5e1; }
+    .muted { color: #64748b; font-style: italic; }
+
+    .detail-row td {
+      padding: 0;
+      border-bottom: 2px solid #334155;
+    }
+    .detail-content {
+      display: none;
+      padding: 16px 20px;
+      background: #0f172a;
+    }
+    .detail-content.open { display: block; }
+    .detail-section { margin-bottom: 16px; }
+    .detail-section:last-child { margin-bottom: 0; }
+    .detail-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      margin-bottom: 6px;
+    }
+    .detail-text {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 0.82rem;
+      color: #e2e8f0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .detail-text::-webkit-scrollbar { width: 6px; }
+    .detail-text::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Gemini API 呼叫監控</h1>
+  <div class="meta">
+    <span><span class="dot"></span> 每 5 秒更新</span>
+    <span id="last-update">尚未更新</span>
+  </div>
+  <div class="actions">
+    <button id="btn-clear">清除顯示</button>
+    <button id="btn-refresh">立即刷新</button>
+  </div>
+</header>
+
+<div class="stats-bar">
+  <div class="stat-card">
+    <div class="label">總呼叫</div>
+    <div class="value val-total" id="stat-total">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">成功</div>
+    <div class="value val-success" id="stat-success">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">429 限流</div>
+    <div class="value val-429" id="stat-429">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">錯誤</div>
+    <div class="value val-error" id="stat-error">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">平均延遲</div>
+    <div class="value val-latency" id="stat-latency">— ms</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">總 Token 用量</div>
+    <div class="value" style="color:#a78bfa" id="stat-tokens">0</div>
+  </div>
+</div>
+
+<main>
+  <div class="empty" id="empty-msg">尚無記錄，送出一則聊天訊息後將出現在此處</div>
+  <table id="log-table" style="display:none;">
+    <thead>
+      <tr>
+        <th>時間</th>
+        <th>Model</th>
+        <th>延遲</th>
+        <th>Tokens</th>
+        <th>狀態</th>
+        <th>Prompt 摘要</th>
+        <th>Output 摘要</th>
+      </tr>
+    </thead>
+    <tbody id="log-body"></tbody>
+  </table>
+</main>
+
+<script>
+  const API_URL = 'http://localhost:8000/api/llm-logs';
+  let allLogs = [];
+  let clearedBefore = null;   // timestamp string — hide logs before this
+
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    return d.toLocaleTimeString('zh-TW', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  }
+
+  function truncate(str, n) {
+    if (!str) return '';
+    return str.length > n ? str.slice(0, n) + '…' : str;
+  }
+
+  function badgeHtml(status) {
+    let key = status;
+    if (status && status.startsWith('429')) key = '429';
+    const map = {
+      success: ['badge-success', '✅ 成功'],
+      '429':   ['badge-429',     '⚠️ ' + status],
+      error:   ['badge-error',   '❌ 錯誤'],
+    };
+    const [cls, label] = map[key] || ['badge-error', status];
+    return `<span class="badge ${cls}">${label}</span>`;
+  }
+
+  function updateStats(logs) {
+    const total = logs.length;
+    const success = logs.filter(l => l.status === 'success').length;
+    const r429 = logs.filter(l => l.status && l.status.startsWith('429')).length;
+    const err = logs.filter(l => l.status === 'error').length;
+    const avgLat = total
+      ? Math.round(logs.reduce((s, l) => s + l.latency_ms, 0) / total)
+      : null;
+    const totalTokens = logs.reduce((s, l) => {
+      const t = l.token_usage && l.token_usage.total_tokens;
+      return s + (t || 0);
+    }, 0);
+
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-success').textContent = success;
+    document.getElementById('stat-429').textContent = r429;
+    document.getElementById('stat-error').textContent = err;
+    document.getElementById('stat-latency').textContent = avgLat !== null ? `${avgLat} ms` : '— ms';
+    document.getElementById('stat-tokens').textContent = totalTokens.toLocaleString();
+  }
+
+  function renderLogs(logs) {
+    const visible = clearedBefore
+      ? logs.filter(l => l.timestamp > clearedBefore)
+      : logs;
+
+    updateStats(visible);
+
+    const empty = document.getElementById('empty-msg');
+    const table = document.getElementById('log-table');
+    const tbody = document.getElementById('log-body');
+
+    if (visible.length === 0) {
+      empty.style.display = '';
+      table.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+    table.style.display = '';
+
+    tbody.innerHTML = '';
+
+    visible.forEach((log, idx) => {
+      // Main row
+      const tr = document.createElement('tr');
+      tr.dataset.idx = idx;
+      const tokens = log.token_usage && log.token_usage.total_tokens;
+      tr.innerHTML = `
+        <td class="timestamp">${fmtTime(log.timestamp)}</td>
+        <td style="color:#94a3b8;font-size:0.78rem">${log.model || '—'}</td>
+        <td class="latency">${log.latency_ms} ms</td>
+        <td style="color:#a78bfa;font-family:monospace">${tokens ? tokens.toLocaleString() : '—'}</td>
+        <td>${badgeHtml(log.status)}</td>
+        <td class="truncated">${truncate(log.prompt, 60) || '<span class="muted">（空）</span>'}</td>
+        <td class="truncated">${truncate(log.output, 80) || '<span class="muted">（空）</span>'}</td>
+      `;
+
+      // Detail row
+      const detailTr = document.createElement('tr');
+      detailTr.className = 'detail-row';
+      const detailTd = document.createElement('td');
+      detailTd.colSpan = 7;
+      const detailDiv = document.createElement('div');
+      detailDiv.className = 'detail-content';
+      detailDiv.id = `detail-${idx}`;
+      const tu = log.token_usage || {};
+      const tokenDetail = tu.total_tokens
+        ? `輸入: ${tu.input_tokens || 0} / 輸出: ${tu.output_tokens || 0} / 合計: ${tu.total_tokens}`
+        : '（無資料）';
+      detailDiv.innerHTML = `
+        <div class="detail-section">
+          <div class="detail-label">Token 用量</div>
+          <div class="detail-text" style="color:#a78bfa">${tokenDetail}</div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-label">完整 Prompt</div>
+          <div class="detail-text">${escHtml(log.prompt || '（無）')}</div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-label">完整 Output</div>
+          <div class="detail-text">${escHtml(log.output || '（無）')}</div>
+        </div>
+        ${log.error ? `<div class="detail-section">
+          <div class="detail-label">錯誤訊息</div>
+          <div class="detail-text" style="color:#f87171">${escHtml(log.error)}</div>
+        </div>` : ''}
+      `;
+      detailTd.appendChild(detailDiv);
+      detailTr.appendChild(detailTd);
+
+      tr.addEventListener('click', () => {
+        const isOpen = detailDiv.classList.contains('open');
+        // Close all
+        document.querySelectorAll('.detail-content.open').forEach(el => el.classList.remove('open'));
+        document.querySelectorAll('tbody tr.expanded').forEach(el => el.classList.remove('expanded'));
+        if (!isOpen) {
+          detailDiv.classList.add('open');
+          tr.classList.add('expanded');
+        }
+      });
+
+      tbody.appendChild(tr);
+      tbody.appendChild(detailTr);
+    });
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  async function fetchLogs() {
+    try {
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      allLogs = await res.json();
+      renderLogs(allLogs);
+      document.getElementById('last-update').textContent =
+        '最後更新：' + new Date().toLocaleTimeString('zh-TW', { hour12: false });
+    } catch (e) {
+      document.getElementById('last-update').textContent = '更新失敗：' + e.message;
+    }
+  }
+
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    clearedBefore = new Date().toISOString();
+    renderLogs(allLogs);
+  });
+
+  document.getElementById('btn-refresh').addEventListener('click', fetchLogs);
+
+  // Initial fetch + polling
+  fetchLogs();
+  setInterval(fetchLogs, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+name: disaster-report
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: disaster_db
+    environment:
+      POSTGRES_DB: disaster_report
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

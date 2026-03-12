@@ -74,14 +74,13 @@ def test_find_candidate_events_fire_radius():
 async def test_llm_judge_duplicate_yes():
     candidate = _make_candidate()
 
-    with patch("app.services.dedup_service.genai.Client") as mock_client_cls:
-        mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
+    with patch("app.services.dedup_service.anthropic.AsyncAnthropic") as mock_cls:
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
 
-        mock_response = MagicMock()
-        mock_response.text = "YES"
-        mock_client.aio = MagicMock()
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text="YES")]
+        mock_client.messages.create = AsyncMock(return_value=mock_message)
 
         result = await llm_judge_duplicate("台北市發生規模5地震", candidate)
 
@@ -93,14 +92,13 @@ async def test_llm_judge_duplicate_yes():
 async def test_llm_judge_duplicate_no():
     candidate = _make_candidate()
 
-    with patch("app.services.dedup_service.genai.Client") as mock_client_cls:
-        mock_client = MagicMock()
-        mock_client_cls.return_value = mock_client
+    with patch("app.services.dedup_service.anthropic.AsyncAnthropic") as mock_cls:
+        mock_client = AsyncMock()
+        mock_cls.return_value = mock_client
 
-        mock_response = MagicMock()
-        mock_response.text = "NO"
-        mock_client.aio = MagicMock()
-        mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text="NO")]
+        mock_client.messages.create = AsyncMock(return_value=mock_message)
 
         result = await llm_judge_duplicate("台北市信義區火災", candidate)
 

@@ -60,7 +60,14 @@ async def _process_tool_use(tool_data: dict, raw_message: str, db: Session) -> d
 
     matched_event = None
     for candidate in candidates:
-        if is_duplicate(tool_data["description"], candidate):
+        if await is_duplicate(
+            tool_data["description"],
+            latitude,
+            longitude,
+            occurred_at,
+            tool_data["disaster_type"],
+            candidate,
+        ):
             matched_event = candidate
             break
 

@@ -1,6 +1,9 @@
 import difflib
 from datetime import datetime, timedelta, timezone
+from math import atan2, cos, radians, sin, sqrt
 
+import anthropic
+import jieba
 from geoalchemy2.functions import ST_Distance, ST_DWithin, ST_SetSRID, ST_MakePoint
 from sqlalchemy import cast
 from sqlalchemy.orm import Session
@@ -10,17 +13,22 @@ from app.models.disaster_event import DisasterEvent
 
 # Dedup radius by disaster type (in meters)
 DEDUP_RADIUS = {
-    "trapped":          1_000,   # 1 km
-    "road_collapse":    2_000,   # 2 km
-    "flooding":         5_000,   # 5 km
-    "landslide":        3_000,   # 3 km
-    "building_damage":  1_000,   # 1 km
-    "utility_damage":   2_000,   # 2 km
-    "fire":             1_000,   # 1 km
-    "other":            3_000,   # 3 km
+    "earthquake":      50_000,  # 50 km
+    "trapped":          1_000,  # 1 km
+    "road_collapse":    2_000,  # 2 km
+    "flooding":         5_000,  # 5 km
+    "landslide":        3_000,  # 3 km
+    "building_damage":  1_000,  # 1 km
+    "utility_damage":   2_000,  # 2 km
+    "fire":             5_000,  # 5 km
+    "other":            3_000,  # 3 km
 }
 
-DEDUP_HOURS = 72
+# Dedup time window by disaster type (in hours); default for unlisted types
+DEDUP_HOURS_BY_TYPE: dict[str, int] = {
+    "fire": 12,
+}
+DEDUP_HOURS_DEFAULT = 72
 
 
 def find_candidate_events(
@@ -32,7 +40,8 @@ def find_candidate_events(
 ) -> list[DisasterEvent]:
     """Find nearby active events of the same type within the dedup window."""
     radius = DEDUP_RADIUS.get(disaster_type, 10_000)
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=DEDUP_HOURS)
+    hours = DEDUP_HOURS_BY_TYPE.get(disaster_type, DEDUP_HOURS_DEFAULT)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
 
@@ -60,10 +69,101 @@ def find_candidate_events(
     return candidates
 
 
-def is_duplicate(new_report_desc: str, candidate_event: DisasterEvent) -> bool:
-    """判斷新通報是否與候選事件重複（文字相似度）。"""
-    candidate_text = f"{candidate_event.title} {candidate_event.description or ''}"
-    ratio = difflib.SequenceMatcher(
-        None, new_report_desc, candidate_text
-    ).ratio()
-    return ratio >= 0.4
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+
+
+def _compute_dedup_score(
+    new_desc: str,
+    new_lat: float,
+    new_lon: float,
+    new_time: datetime,
+    new_type: str,
+    candidate: DisasterEvent,
+) -> float:
+    """Compute a 0–1 similarity score across four dimensions."""
+    # 1. Semantic similarity: jieba tokenisation + Jaccard
+    candidate_text = f"{candidate.title} {candidate.description or ''}"
+    new_tokens = set(jieba.cut(new_desc))
+    cand_tokens = set(jieba.cut(candidate_text))
+    union = new_tokens | cand_tokens
+    semantic_score = len(new_tokens & cand_tokens) / len(union) if union else 0.0
+
+    # 2. Geographic distance score
+    try:
+        from geoalchemy2.shape import to_shape  # noqa: PLC0415
+        pt = to_shape(candidate.location)
+        cand_lat, cand_lon = pt.y, pt.x
+        max_radius_km = DEDUP_RADIUS.get(new_type, 10_000) / 1000
+        dist_km = _haversine_km(new_lat, new_lon, cand_lat, cand_lon)
+        geo_score = max(0.0, 1.0 - dist_km / max_radius_km)
+    except Exception:
+        geo_score = 0.5  # fallback when geometry is unavailable (e.g. in tests)
+
+    # 3. Time proximity score
+    cand_time = candidate.occurred_at
+    if cand_time.tzinfo is None:
+        cand_time = cand_time.replace(tzinfo=timezone.utc)
+    if new_time.tzinfo is None:
+        new_time = new_time.replace(tzinfo=timezone.utc)
+    hours_diff = abs((new_time - cand_time).total_seconds()) / 3600
+    if hours_diff <= 1:
+        time_score = 1.0
+    elif hours_diff >= 24:
+        time_score = 0.2
+    else:
+        time_score = 1.0 - 0.8 * (hours_diff - 1) / 23
+
+    # 4. Type match score
+    type_score = 1.0 if new_type == candidate.disaster_type else 0.0
+
+    return 0.3 * semantic_score + 0.3 * geo_score + 0.2 * time_score + 0.2 * type_score
+
+
+async def llm_judge_duplicate(new_desc: str, candidate: DisasterEvent) -> bool:
+    """Use Claude haiku to judge whether two reports describe the same disaster event."""
+    client = anthropic.AsyncAnthropic()
+    candidate_text = f"{candidate.title}：{candidate.description or ''}"
+    prompt = (
+        "以下兩則通報是否描述同一個災害事件？請只回答 YES 或 NO。\n\n"
+        f"通報一：{new_desc}\n\n"
+        f"通報二：{candidate_text}"
+    )
+    try:
+        message = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=10,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text.strip().upper().startswith("YES")
+    except Exception:
+        # Fallback to string similarity when LLM is unavailable
+        candidate_full = f"{candidate.title} {candidate.description or ''}"
+        ratio = difflib.SequenceMatcher(None, new_desc, candidate_full).ratio()
+        return ratio >= 0.4
+
+
+async def is_duplicate(
+    new_desc: str,
+    new_lat: float,
+    new_lon: float,
+    new_time: datetime,
+    new_type: str,
+    candidate: DisasterEvent,
+) -> bool:
+    """判斷新通報是否與候選事件重複（多維度加權評分 + LLM 輔助）。
+
+    Score > 0.80 → duplicate
+    Score 0.50–0.80 → delegate to LLM
+    Score < 0.50 → distinct event
+    """
+    score = _compute_dedup_score(new_desc, new_lat, new_lon, new_time, new_type, candidate)
+    if score > 0.80:
+        return True
+    if score >= 0.50:
+        return await llm_judge_duplicate(new_desc, candidate)
+    return False

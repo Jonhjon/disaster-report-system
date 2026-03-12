@@ -11,3 +11,4 @@ anthropic>=0.40.0
 httpx==0.28.1
 sse-starlette==2.2.1
 tzdata>=2024.1
+jieba>=0.42.1

@@ -31,8 +31,8 @@ def _make_candidate():
     return c
 
 
-# Case 11: earthquake 去重半徑應為 50,000 m
-def test_find_candidate_events_earthquake_radius():
+# Case 11: 未定義類型應使用預設去重半徑 10,000 m
+def test_find_candidate_events_default_radius():
     mock_db = _make_mock_db()
 
     with patch("app.services.dedup_service.ST_DWithin") as mock_dwithin:
@@ -40,14 +40,14 @@ def test_find_candidate_events_earthquake_radius():
 
         find_candidate_events(
             mock_db,
-            disaster_type="earthquake",
+            disaster_type="unknown_type",
             latitude=25.0,
             longitude=121.5,
         )
 
         mock_dwithin.assert_called_once()
         radius_arg = mock_dwithin.call_args[0][2]
-        assert radius_arg == 50_000
+        assert radius_arg == 10_000
 
 
 # Case 12: fire 去重半徑應為 5,000 m

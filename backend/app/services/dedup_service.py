@@ -13,7 +13,6 @@ from app.models.disaster_event import DisasterEvent
 
 # Dedup radius by disaster type (in meters)
 DEDUP_RADIUS = {
-    "earthquake":      50_000,  # 50 km
     "trapped":          1_000,  # 1 km
     "road_collapse":    2_000,  # 2 km
     "flooding":         5_000,  # 5 km

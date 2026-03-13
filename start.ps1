@@ -115,3 +115,5 @@ Write-Host ''
 Start-Sleep -Seconds 5
 Start-Process 'http://localhost:5173'
 Start-Process 'http://localhost:8000/static/monitor.html'
+
+Set-Location $ProjectDir

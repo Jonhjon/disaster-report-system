@@ -25,6 +25,7 @@ export interface DisasterReport {
   raw_message: string;
   extracted_data: Record<string, unknown>;
   location_text: string | null;
+  geocoded_address: string | null;
   created_at: string;
 }
 

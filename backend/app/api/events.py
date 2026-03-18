@@ -97,6 +97,7 @@ def get_event_reports(event_id: UUID, db: Session = Depends(get_db)):
             raw_message=r.raw_message,
             extracted_data=r.extracted_data,
             location_text=r.location_text,
+            geocoded_address=r.geocoded_address,
             created_at=r.created_at,
         )
         for r in reports

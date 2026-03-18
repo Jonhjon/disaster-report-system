@@ -108,9 +108,17 @@ function EventDetail({ event, reports, onUpdate, onDelete }: EventDetailProps) {
               <span className="text-gray-500">通報數量：</span>
               <span className="font-medium">{event.report_count}</span>
             </div>
-            <div>
+            <div className="col-span-2">
               <span className="text-gray-500">地點：</span>
-              <span className="font-medium">{event.location_text}</span>
+              <span className="font-medium">
+                {(() => {
+                  const full = reports[0]?.geocoded_address;
+                  if (full && full !== event.location_text) {
+                    return `${full}（${event.location_text}）`;
+                  }
+                  return event.location_text;
+                })()}
+              </span>
             </div>
             <div>
               <span className="text-gray-500">發生時間：</span>

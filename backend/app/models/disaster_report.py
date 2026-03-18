@@ -25,6 +25,7 @@ class DisasterReport(Base):
     extracted_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
     location = mapped_column(Geometry("POINT", srid=4326), nullable=True)
     location_text: Mapped[str | None] = mapped_column(String(500))
+    geocoded_address: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

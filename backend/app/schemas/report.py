@@ -13,6 +13,7 @@ class ReportResponse(BaseModel):
     raw_message: str
     extracted_data: dict[str, Any]
     location_text: str | None
+    geocoded_address: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

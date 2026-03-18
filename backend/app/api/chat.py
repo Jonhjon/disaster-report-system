@@ -181,7 +181,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
                 is_rpd = any(k in error_msg.lower() for k in ["per-day", "per_day", "daily"])
                 if is_rpd:
-                    friendly = "Gemini API 每日免費配額已用盡，請明天（UTC 00:00 重置）再試，或至 Google AI Studio 啟用付費方案。"
+                    friendly = "API 每日免費配額已用盡，請明天（UTC 00:00 重置）再試，或至 Google AI Studio 啟用付費方案。"
                 else:
                     friendly = "AI 服務每分鐘請求超限（已等待重試），請稍等 1 分鐘後再試。"
             else:

@@ -13,14 +13,14 @@ from app.models.disaster_event import DisasterEvent
 
 # Dedup radius by disaster type (in meters)
 DEDUP_RADIUS = {
-    "trapped":          1_000,  # 1 km
-    "road_collapse":    2_000,  # 2 km
-    "flooding":         5_000,  # 5 km
-    "landslide":        3_000,  # 3 km
-    "building_damage":  1_000,  # 1 km
-    "utility_damage":   2_000,  # 2 km
-    "fire":             5_000,  # 5 km
-    "other":            3_000,  # 3 km
+    "trapped":          1_00,  # 1 km 受困
+    "road_collapse":    2_00,  # 2 km 道路崩塌
+    "flooding":         5_00,  # 5 km 淹水
+    "landslide":        3_00,  # 3 km 山體滑坡
+    "building_damage":  1_00,  # 1 km 建築物損壞
+    "utility_damage":   2_00,  # 2 km 公用設施損壞
+    "fire":             5_00,  # 5 km 火災
+    "other":            3_00,  # 3 km 
 }
 
 # Dedup time window by disaster type (in hours); default for unlisted types

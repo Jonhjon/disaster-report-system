@@ -136,3 +136,57 @@ type_score = 1.0（相同類型）或 0.0（不同類型）
 | > 0.80 | 直接判定 | 重複 |
 | 0.50–0.80 | LLM 判斷 | YES → 重複 / NO → 新事件 |
 | < 0.50 | 直接判定 | 新事件 |
+
+---
+
+## 合併操作
+
+**位置：** `backend/app/api/chat.py`，`_process_tool_use()` 函式
+
+### 1. 觸發條件
+
+`is_duplicate()` 對任一候選事件返回 `True` 時，取第一個匹配的事件作為合併目標（`matched_event`）。
+
+### 2. 事件欄位更新
+
+| 欄位 | 操作 |
+|------|------|
+| `report_count` | +1 |
+| `severity` | `max(現有, 新通報)` |
+| `casualties` | `max(現有, 新通報)` |
+| `injured` | `max(現有, 新通報)` |
+| `trapped` | `max(現有, 新通報)` |
+| `description` | 呼叫 `merge_event_descriptions()` |
+| `updated_at` | 更新為現在時間 |
+
+所有數值欄位取較大值，確保合併後的事件反映最嚴重的已知狀況。
+
+### 3. 描述整合 `merge_event_descriptions()`
+
+**位置：** `backend/app/services/llm_service.py:79-103`
+
+三條執行路徑：
+
+| 情況 | 處理方式 |
+|------|---------|
+| **短路**：任一方為空，或兩者相同 | 直接返回非空的一方，不呼叫 LLM |
+| **正常流程** | 呼叫 Claude Haiku（`claude-haiku-4-5-20251001`），`max_tokens=300`，限制整合描述不超過 200 字，輸出繁體中文 |
+| **Fallback**：LLM 拋出例外 | 以 `f"{existing}；{new}"` 直接連接兩段描述 |
+
+### 4. 通報關聯
+
+新通報（`DisasterReport`）的 `event_id` 設為匹配事件的 ID，並寫入資料庫，建立通報與事件的關聯記錄。
+
+### 5. API 回傳結構
+
+```json
+{
+  "status": "merged",
+  "event_id": "<UUID>",
+  "message": "此通報已合併至現有事件「...」（第 N 筆通報）",
+  "merged_description": "<整合後描述>",
+  "geocoded_address": "<地理編碼地址>"
+}
+```
+
+`status: "merged"` 與 `status: "created"` 區分新建與合併兩種結果，前端可據此顯示不同提示訊息。

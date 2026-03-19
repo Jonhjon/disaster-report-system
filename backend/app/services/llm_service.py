@@ -1,9 +1,12 @@
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import anthropic
+
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.database import SessionLocal
@@ -74,6 +77,77 @@ SUBMIT_TOOL = {
 
 def _get_client() -> anthropic.AsyncAnthropic:
     return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+
+async def merge_event_descriptions(existing: str, new: str) -> str:
+    """Use LLM to merge two disaster event descriptions into one."""
+    if not existing:
+        return new
+    if not new or existing == new:
+        return existing
+
+    client = _get_client()
+    try:
+        message = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "以下是同一災害事件的兩段描述，請整合成一段簡潔完整的繁體中文描述"
+                    "（保留所有重要資訊，避免重複，不超過 200 字）：\n\n"
+                    f"【原描述】{existing}\n\n【新描述】{new}\n\n只輸出整合後的描述，不要任何說明。"
+                ),
+            }],
+        )
+        merged = message.content[0].text.strip()
+        return merged if merged else f"{existing}；{new}"
+    except Exception:
+        return f"{existing}；{new}"
+
+
+async def reextract_numbers_from_description(description: str) -> dict:
+    """從合併後的描述重新萃取 casualties/injured/trapped/severity。
+    失敗或找不到時回傳 {}，呼叫端保留原 max() 值。"""
+    if not description:
+        return {}
+    client = _get_client()
+    try:
+        message = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=100,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "從以下災情描述中萃取數字資訊。"
+                    "只輸出一個 JSON 物件，不要說明或程式碼區塊。\n"
+                    "欄位：casualties(死亡), injured(受傷), trapped(受困) 為整數>=0，"
+                    "severity 為 1-5 整數（1=輕微~5=極嚴重）。"
+                    "找不到則填 null。\n"
+                    '格式：{"casualties":...,"injured":...,"trapped":...,"severity":...}\n\n'
+                    f"描述：{description}"
+                ),
+            }],
+        )
+        raw = message.content[0].text.strip()
+        # 防禦：移除可能的 markdown code fence
+        if raw.startswith("```"):
+            parts = raw.split("```")
+            raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
+        data = json.loads(raw)
+        result = {}
+        for key in ("casualties", "injured", "trapped"):
+            val = data.get(key)
+            if val is not None:
+                result[key] = int(val)
+        val = data.get("severity")
+        if val is not None:
+            sev = int(val)
+            if 1 <= sev <= 5:
+                result["severity"] = sev
+        return result
+    except Exception:
+        return {}
 
 
 async def stream_chat(messages: list[dict]):
@@ -147,8 +221,9 @@ async def stream_chat(messages: list[dict]):
         status = "error"
         yield {"type": "text", "content": "⚠️ API 金鑰無效，請聯絡系統管理員。"}
         yield {"type": "done"}
-    except Exception:
+    except Exception as e:
         status = "error"
+        logger.exception("stream_chat unexpected error: %s", e)
         yield {"type": "text", "content": "⚠️ 系統發生錯誤，請稍後再試。"}
         yield {"type": "done"}
     finally:

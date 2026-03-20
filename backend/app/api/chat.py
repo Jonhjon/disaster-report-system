@@ -1,5 +1,4 @@
 import json
-import uuid
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -19,23 +18,26 @@ from geoalchemy2.functions import ST_SetSRID, ST_MakePoint
 router = APIRouter()
 
 
-async def _process_tool_use(tool_data: dict, raw_message: str, db: Session) -> dict:
-    """Process the submit_disaster_report tool call: geocode, dedup, save."""
-    latitude = tool_data.get("latitude")
-    longitude = tool_data.get("longitude")
+async def _process_tool_use(
+    tool_data: dict,
+    raw_message: str,
+    db: Session,
+    coords: dict | None,
+) -> dict:
+    """Process the submit_disaster_report tool call: dedup, save.
 
-    # Geocoding if no coordinates
-    geocoded_address = None
-    if latitude is None or longitude is None:
-        coords = await geocode_address(tool_data["location_text"])
-        if coords:
-            latitude = coords["latitude"]
-            longitude = coords["longitude"]
-            geocoded_address = coords.get("display_name")
-        else:
-            # Default to Taiwan center if geocoding fails
-            latitude = latitude or 23.5
-            longitude = longitude or 121.0
+    coords: pre-geocoded result from geocode_address(), or None if geocoding failed.
+    Caller is responsible for checking geocoding success before calling this.
+    """
+    if coords:
+        latitude = coords["latitude"]
+        longitude = coords["longitude"]
+        geocoded_address = coords.get("display_name")
+    else:
+        # Fallback: should rarely reach here since caller checks geocoding
+        latitude = 23.5
+        longitude = 121.0
+        geocoded_address = None
 
     # Parse occurred_at
     occurred_at_str = tool_data.get("occurred_at")
@@ -161,21 +163,74 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     ) + f"\n[user] {request.message}"
 
     async def event_generator():
+        def _sse(data: dict) -> dict:
+            return {"event": "message", "data": json.dumps(data, ensure_ascii=False)}
+
         try:
+            collected_text = ""
+            is_continuation = False  # 已進入追問流程，避免無限遞迴
+
             async for chunk in llm_service.stream_chat(messages):
                 if chunk["type"] == "text":
-                    yield {"event": "message", "data": json.dumps(chunk, ensure_ascii=False)}
+                    collected_text += chunk["content"]
+                    yield _sse(chunk)
+
                 elif chunk["type"] == "tool_use":
-                    # Process the tool call
-                    result = await _process_tool_use(chunk["data"], raw_message, db)
-                    yield {
-                        "event": "message",
-                        "data": json.dumps(
-                            {"type": "report_submitted", **result}, ensure_ascii=False
-                        ),
-                    }
+                    tool_data = chunk["data"]
+                    tool_use_id = chunk["tool_use_id"]
+
+                    # 嘗試 geocode
+                    coords = await geocode_address(tool_data["location_text"])
+                    geocoding_ok = coords is not None
+
+                    if not geocoding_ok and not is_continuation:
+                        # Geocoding 失敗 → 透過 tool_result 讓 Claude 追問使用者
+                        assistant_content = []
+                        if collected_text:
+                            assistant_content.append({"type": "text", "text": collected_text})
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": tool_use_id,
+                            "name": "submit_disaster_report",
+                            "input": tool_data,
+                        })
+                        location = tool_data["location_text"]
+                        tool_result_msg = (
+                            f"系統無法辨識地址「{location}」的確切位置（geocoding 失敗）。"
+                            "請向使用者追問更具體的地點，例如：縣市＋區＋路段＋門牌，"
+                            "或附近知名地標（如學校、公園、捷運站）。"
+                            "不要自行推測地址，必須等使用者提供更具體資訊後再重新提交通報。"
+                        )
+                        continuation_messages = messages + [
+                            {"role": "assistant", "content": assistant_content},
+                            {"role": "user", "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": tool_use_id,
+                                "content": tool_result_msg,
+                            }]},
+                        ]
+                        collected_text = ""
+                        is_continuation = True
+                        async for cont_chunk in llm_service.stream_chat(continuation_messages):
+                            if cont_chunk["type"] == "text":
+                                yield _sse(cont_chunk)
+                            elif cont_chunk["type"] == "tool_use":
+                                # Edge case：continuation 裡 Claude 又呼叫工具，強制接受
+                                cont_coords = await geocode_address(cont_chunk["data"]["location_text"])
+                                result = await _process_tool_use(cont_chunk["data"], raw_message, db, cont_coords)
+                                yield _sse({"type": "report_submitted", **result})
+                                break
+                            elif cont_chunk["type"] == "done":
+                                yield _sse({"type": "done"})
+                    else:
+                        # Geocoding 成功（或已在 continuation 中）→ 直接建立事件
+                        result = await _process_tool_use(tool_data, raw_message, db, coords)
+                        yield _sse({"type": "report_submitted", **result})
+
                 elif chunk["type"] == "done":
-                    yield {"event": "message", "data": json.dumps({"type": "done"}, ensure_ascii=False)}
+                    if not is_continuation:
+                        yield _sse({"type": "done"})
+
         except Exception as e:
             error_msg = str(e)
             if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
@@ -186,6 +241,6 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                     friendly = "AI 服務每分鐘請求超限（已等待重試），請稍等 1 分鐘後再試。"
             else:
                 friendly = f"AI 服務發生錯誤，請稍後再試。（{error_msg[:120]}）"
-            yield {"event": "message", "data": json.dumps({"type": "error", "message": friendly}, ensure_ascii=False)}
+            yield _sse({"type": "error", "message": friendly})
 
     return EventSourceResponse(event_generator())

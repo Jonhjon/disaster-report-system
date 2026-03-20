@@ -59,10 +59,8 @@ SUBMIT_TOOL = {
                 "description": "災情類型"
             },
             "description":    {"type": "string", "description": "災情詳細描述"},
-            "location_text":  {"type": "string", "description": "地點的文字描述"},
+            "location_text":  {"type": "string", "description": "地點的文字描述（必須為具體地址、路名或知名地標，不可只填縣市名稱）"},
             "severity":       {"type": "integer", "minimum": 1, "maximum": 5},
-            "latitude":       {"type": "number"},
-            "longitude":      {"type": "number"},
             "casualties":     {"type": "integer", "minimum": 0},
             "injured":        {"type": "integer", "minimum": 0},
             "trapped":        {"type": "integer", "minimum": 0},
@@ -169,6 +167,7 @@ async def stream_chat(messages: list[dict]):
 
     start_time = time.time()
     tool_name = None
+    tool_use_id: str | None = None
     tool_input_parts: list[str] = []
     output_parts: list[str] = []
     status = "success"
@@ -187,6 +186,7 @@ async def stream_chat(messages: list[dict]):
                 if event.type == "content_block_start":
                     if event.content_block.type == "tool_use":
                         tool_name = event.content_block.name
+                        tool_use_id = event.content_block.id
                         tool_input_parts = []
 
                 elif event.type == "content_block_delta":
@@ -199,8 +199,9 @@ async def stream_chat(messages: list[dict]):
                 elif event.type == "content_block_stop":
                     if tool_name:
                         tool_data = json.loads("".join(tool_input_parts))
-                        yield {"type": "tool_use", "tool": tool_name, "data": tool_data}
+                        yield {"type": "tool_use", "tool": tool_name, "data": tool_data, "tool_use_id": tool_use_id}
                         tool_name = None
+                        tool_use_id = None
                         tool_input_parts = []
 
             final_msg = await stream.get_final_message()

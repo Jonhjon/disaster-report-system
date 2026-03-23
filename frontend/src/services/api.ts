@@ -73,6 +73,16 @@ export async function getEventReports(
   return fetchJSON(`/events/${eventId}/reports`);
 }
 
+export async function updateEventLocation(
+  id: string,
+  locationText: string,
+): Promise<EventMapItem> {
+  return fetchJSON(`/events/${id}/location`, {
+    method: "PATCH",
+    body: JSON.stringify({ location_text: locationText }),
+  });
+}
+
 export async function getMapEvents(params: {
   bounds?: string;
   disaster_type?: string;

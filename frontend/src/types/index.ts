@@ -13,6 +13,7 @@ export interface DisasterEvent {
   trapped: number;
   status: EventStatus;
   report_count: number;
+  location_approximate: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -59,6 +60,7 @@ export interface EventMapItem {
   status: EventStatus;
   report_count: number;
   occurred_at: string;
+  location_approximate: boolean;
 }
 
 export interface ChatMessage {

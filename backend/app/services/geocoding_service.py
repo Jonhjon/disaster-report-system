@@ -76,6 +76,35 @@ async def geocode_tgos(address: str) -> dict | None:
     return None
 
 
+async def geocode_google_places(query: str) -> dict | None:
+    """Search for a specific business/POI using Google Places Text Search API.
+
+    Better than Geocoding API for finding specific stores, restaurants, etc.
+    Returns {"latitude": float, "longitude": float, "display_name": str, "source": "google_places"} or None.
+    """
+    api_key = settings.GOOGLE_MAPS_API_KEY
+    if not api_key:
+        return None
+    url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+    params = {"query": query, "key": api_key, "region": "tw", "language": "zh-TW"}
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=10)
+            data = response.json()
+            if data.get("status") == "OK" and data.get("results"):
+                result = data["results"][0]
+                loc = result["geometry"]["location"]
+                return {
+                    "latitude": loc["lat"],
+                    "longitude": loc["lng"],
+                    "display_name": result.get("formatted_address", query),
+                    "source": "google_places",
+                }
+    except Exception:
+        pass
+    return None
+
+
 async def geocode_google(address: str) -> dict | None:
     """Query Google Maps Geocoding API.
 
@@ -111,7 +140,8 @@ async def geocode_address(address: str) -> dict | None:
       1. Claude haiku extracts a searchable address from informal text
       2. TGOS API (Taiwan government geocoding, ~90% accuracy)
       3. Nominatim / OpenStreetMap (fallback)
-      4. Google Maps Geocoding API (final fallback)
+      4. Google Places Text Search (specific businesses/POIs)
+      5. Google Maps Geocoding API (address-level fallback)
 
     Returns {"latitude": float, "longitude": float, "display_name": str} or None.
     """
@@ -159,14 +189,20 @@ async def geocode_address(address: str) -> dict | None:
     except Exception:
         pass
 
-    # Step 4: Google Maps fallback
+    # Step 4: Google Places Text Search (for specific businesses/POIs)
     # 原始文字優先（保留地標等上下文），萃取字串次之
-    google_queries = []
+    places_queries = []
     if address != searchable:
-        google_queries.append(address)
-    google_queries.append(searchable)
+        places_queries.append(address)
+    places_queries.append(searchable)
 
-    for q in google_queries:
+    for q in places_queries:
+        result = await geocode_google_places(q)
+        if result:
+            return result
+
+    # Step 5: Google Geocoding fallback (address-level)
+    for q in places_queries:
         result = await geocode_google(q)
         if result:
             return result

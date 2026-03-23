@@ -22,6 +22,7 @@ class EventBase(BaseModel):
 class EventResponse(EventBase):
     id: UUID
     report_count: int
+    location_approximate: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -63,9 +64,14 @@ class EventMapItem(BaseModel):
     status: str
     report_count: int
     occurred_at: datetime
+    location_approximate: bool = False
 
     model_config = {"from_attributes": True}
 
 
 class EventMapResponse(BaseModel):
     items: list[EventMapItem]
+
+
+class EventLocationUpdate(BaseModel):
+    location_text: str = Field(min_length=1, max_length=500)

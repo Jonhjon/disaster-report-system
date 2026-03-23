@@ -1,6 +1,6 @@
-import os
-
 import httpx
+
+from app.config import settings
 
 
 async def extract_structured_address(text: str) -> str:
@@ -8,7 +8,7 @@ async def extract_structured_address(text: str) -> str:
 
     Falls back to the original text when the API key is unavailable or on any error.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    api_key = settings.ANTHROPIC_API_KEY
     if not api_key:
         return text
 
@@ -23,8 +23,16 @@ async def extract_structured_address(text: str) -> str:
                 {
                     "role": "user",
                     "content": (
-                        "請從以下地點描述中擷取可用於地圖查詢的台灣地址"
-                        "（例如「台北市信義區松高路」），只輸出地址，不要任何解釋：\n"
+                        "請從以下地點描述中擷取可用於地圖查詢的字串。\n"
+                        "規則：\n"
+                        "1. 地址盡量包含縣市＋區＋路段（例如「花蓮縣花蓮市中央路三段」）\n"
+                        "2. 若有提及特定建築物或商店（如 7-11、全家、學校、捷運站、醫院等），"
+                        "請附加在地址後面（7-11 請標準化為 7-ELEVEN，全家標準化為 FamilyMart）\n"
+                        "3. 若有提及附近地標（如學校、大學、火車站、公園、醫院等），"
+                        "也一併保留在查詢字串中，這對定位非常重要\n"
+                        "4. 只輸出查詢字串，不要任何說明或標點\n"
+                        "範例：花蓮縣花蓮市中央路三段 慈濟大學 7-ELEVEN / 台北市信義區市府路45號 / 新北市板橋火車站 全家\n"
+                        "地點描述：\n"
                         + text
                     ),
                 }
@@ -68,6 +76,34 @@ async def geocode_tgos(address: str) -> dict | None:
     return None
 
 
+async def geocode_google(address: str) -> dict | None:
+    """Query Google Maps Geocoding API.
+
+    Returns {"latitude": float, "longitude": float, "display_name": str, "source": "google"} or None.
+    """
+    api_key = settings.GOOGLE_MAPS_API_KEY
+    if not api_key:
+        return None
+    url = "https://maps.googleapis.com/maps/api/geocode/json"
+    params = {"address": address, "key": api_key, "region": "TW", "language": "zh-TW"}
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=10)
+            data = response.json()
+            if data.get("status") == "OK" and data.get("results"):
+                result = data["results"][0]
+                loc = result["geometry"]["location"]
+                return {
+                    "latitude": loc["lat"],
+                    "longitude": loc["lng"],
+                    "display_name": result.get("formatted_address", address),
+                    "source": "google",
+                }
+    except Exception:
+        pass
+    return None
+
+
 async def geocode_address(address: str) -> dict | None:
     """Convert address text to coordinates.
 
@@ -75,6 +111,7 @@ async def geocode_address(address: str) -> dict | None:
       1. Claude haiku extracts a searchable address from informal text
       2. TGOS API (Taiwan government geocoding, ~90% accuracy)
       3. Nominatim / OpenStreetMap (fallback)
+      4. Google Maps Geocoding API (final fallback)
 
     Returns {"latitude": float, "longitude": float, "display_name": str} or None.
     """
@@ -100,22 +137,38 @@ async def geocode_address(address: str) -> dict | None:
     if address != searchable:
         nominatim_queries += [address, address + " 台灣"]
 
-    async with httpx.AsyncClient() as client:
-        for query in nominatim_queries:
-            params = {
-                "q": query,
-                "format": "json",
-                "limit": 1,
-                "countrycodes": "tw",
-                "addressdetails": 1,
-            }
-            response = await client.get(url, params=params, headers=headers, timeout=10)
-            if response.status_code == 200:
-                results = response.json()
-                if results:
-                    return {
-                        "latitude": float(results[0]["lat"]),
-                        "longitude": float(results[0]["lon"]),
-                        "display_name": results[0].get("display_name", ""),
-                    }
+    try:
+        async with httpx.AsyncClient() as client:
+            for query in nominatim_queries:
+                params = {
+                    "q": query,
+                    "format": "json",
+                    "limit": 1,
+                    "countrycodes": "tw",
+                    "addressdetails": 1,
+                }
+                response = await client.get(url, params=params, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    results = response.json()
+                    if results:
+                        return {
+                            "latitude": float(results[0]["lat"]),
+                            "longitude": float(results[0]["lon"]),
+                            "display_name": results[0].get("display_name", ""),
+                        }
+    except Exception:
+        pass
+
+    # Step 4: Google Maps fallback
+    # 原始文字優先（保留地標等上下文），萃取字串次之
+    google_queries = []
+    if address != searchable:
+        google_queries.append(address)
+    google_queries.append(searchable)
+
+    for q in google_queries:
+        result = await geocode_google(q)
+        if result:
+            return result
+
     return None

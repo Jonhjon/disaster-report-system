@@ -17,6 +17,8 @@ from geoalchemy2.functions import ST_SetSRID, ST_MakePoint
 
 router = APIRouter()
 
+MAX_GEOCODING_RETRIES = 3
+
 
 async def _process_tool_use(
     tool_data: dict,
@@ -27,14 +29,14 @@ async def _process_tool_use(
     """Process the submit_disaster_report tool call: dedup, save.
 
     coords: pre-geocoded result from geocode_address(), or None if geocoding failed.
-    Caller is responsible for checking geocoding success before calling this.
+    When coords is None the event is created with location_approximate=True.
     """
+    location_approximate = coords is None
     if coords:
         latitude = coords["latitude"]
         longitude = coords["longitude"]
         geocoded_address = coords.get("display_name")
     else:
-        # Fallback: should rarely reach here since caller checks geocoding
         latitude = 23.5
         longitude = 121.0
         geocoded_address = None
@@ -136,6 +138,7 @@ async def _process_tool_use(
             casualties=tool_data.get("casualties", 0),
             injured=tool_data.get("injured", 0),
             trapped=tool_data.get("trapped", 0),
+            location_approximate=location_approximate,
         )
         db.add(event)
         db.flush()
@@ -170,6 +173,17 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             collected_text = ""
             is_continuation = False  # 已進入追問流程，避免無限遞迴
 
+            # 計算歷史訊息中已失敗的 geocoding 次數（跨多輪對話）
+            failed_attempts = sum(
+                1 for m in messages
+                if isinstance(m.get("content"), list)
+                and any(
+                    item.get("type") == "tool_result"
+                    and "geocoding 失敗" in (item.get("content") or "")
+                    for item in m["content"]
+                )
+            )
+
             async for chunk in llm_service.stream_chat(messages):
                 if chunk["type"] == "text":
                     collected_text += chunk["content"]
@@ -183,8 +197,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                     coords = await geocode_address(tool_data["location_text"])
                     geocoding_ok = coords is not None
 
-                    if not geocoding_ok and not is_continuation:
-                        # Geocoding 失敗 → 透過 tool_result 讓 Claude 追問使用者
+                    if not geocoding_ok and not is_continuation and failed_attempts < MAX_GEOCODING_RETRIES:
+                        # Geocoding 失敗且未超過重試上限 → 透過 tool_result 讓 Claude 追問使用者
                         assistant_content = []
                         if collected_text:
                             assistant_content.append({"type": "text", "text": collected_text})
@@ -223,7 +237,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             elif cont_chunk["type"] == "done":
                                 yield _sse({"type": "done"})
                     else:
-                        # Geocoding 成功（或已在 continuation 中）→ 直接建立事件
+                        # Geocoding 成功、已在 continuation 中、或超過重試上限 → 建立事件
+                        # coords 為 None 時將以 location_approximate=True 建立
                         result = await _process_tool_use(tool_data, raw_message, db, coords)
                         yield _sse({"type": "report_submitted", **result})
 

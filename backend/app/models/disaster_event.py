@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
-from sqlalchemy import CheckConstraint, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -28,6 +28,7 @@ class DisasterEvent(Base):
     trapped: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="active")
     report_count: Mapped[int] = mapped_column(Integer, default=1)
+    location_approximate: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

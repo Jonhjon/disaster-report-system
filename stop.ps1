@@ -54,6 +54,18 @@ if (Test-Path $dockerExe) {
 } else {
     Write-Host '      找不到 Docker，略過' -ForegroundColor Gray
 }
+# 4. 關閉後端/前端 PowerShell 視窗
+$pidFile = Join-Path $ProjectDir '.running_pids'
+if (Test-Path $pidFile) {
+    Write-Host ''
+    Write-Host '[4/4] 關閉服務視窗...' -ForegroundColor Yellow
+    $savedPids = Get-Content $pidFile | ConvertFrom-Json
+    Stop-Process -Id $savedPids.BackendPID  -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $savedPids.FrontendPID -Force -ErrorAction SilentlyContinue
+    Remove-Item $pidFile
+    Write-Host '      服務視窗已關閉' -ForegroundColor Green
+}
+
 Write-Host ''
 Write-Host '=== 系統已完全關閉 ===' -ForegroundColor Green
 Write-Host ''

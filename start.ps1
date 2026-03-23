@@ -95,13 +95,17 @@ Get-Process -Name "python" -ErrorAction SilentlyContinue | Stop-Process -Force -
 Start-Sleep -Seconds 1
 
 $backendScript = "Set-Location '" + $BackendDir + "'; & '" + $VenvPython + "' -m uvicorn app.main:app --reload"
-Start-Process powershell -ArgumentList '-NoExit', '-Command', $backendScript
+$backendProc = Start-Process powershell -ArgumentList '-NoExit', '-Command', $backendScript -PassThru
 
 Start-Sleep -Seconds 3
 
 # 6. 啟動前端（新視窗）
 $frontendScript = "Set-Location '" + $FrontendDir + "'; npm run dev"
-Start-Process powershell -ArgumentList '-NoExit', '-Command', $frontendScript
+$frontendProc = Start-Process powershell -ArgumentList '-NoExit', '-Command', $frontendScript -PassThru
+
+# 儲存視窗 PID 供 stop.ps1 使用
+$pidFile = Join-Path $ProjectDir '.running_pids'
+@{ BackendPID = $backendProc.Id; FrontendPID = $frontendProc.Id } | ConvertTo-Json | Set-Content $pidFile
 
 Write-Host ''
 Write-Host '=== 系統啟動完成！===' -ForegroundColor Green

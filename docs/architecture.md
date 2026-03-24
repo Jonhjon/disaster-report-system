@@ -49,7 +49,7 @@
 | 資料庫 | PostgreSQL 16 + PostGIS 3 | 地理空間查詢標準方案 |
 | ORM | SQLAlchemy 2.0 + GeoAlchemy2 | Python 地理空間 ORM |
 | 資料庫遷移 | Alembic | SQLAlchemy 的資料庫版本控制 |
-| Geocoding | Nominatim (OSM) | 免費地址轉座標服務 |
+| Geocoding | Nominatim / TGOS / Google Maps / Google Places | 多層級地址轉座標策略 |
 
 ## 專案結構
 
@@ -134,6 +134,78 @@
 → 顯示摘要確認 → 提交通報 → Geocoding 補座標
 → 事件去重判斷 → 建立/更新事件 → 地圖更新
 ```
+
+### 地點判斷流程
+
+**輸入**：LLM 擷取的 `location_text`（如「花蓮的 Booms Burger」）
+
+#### Step 0 — 快取檢查
+相同字串曾查詢過 → 直接返回（上限 500 筆，process-level）
+
+#### Step 1 — LLM 改寫（Gemini Flash）
+`extract_structured_address()` 將口語地點轉成可查格式
+- 輸入：「花蓮的 Booms Burger」
+- 輸出 `searchable`：「花蓮縣花蓮市中正路 Booms Burger」（可能含猜測路名）
+
+#### Step 1.5 — Named-place fast path
+**觸發條件**：原始 `address`（非 `searchable`）不含 `路/街/大道/巷/弄`
+
+觸發時查詢順序：
+1. `address`（原始文字）→ Google Places Text Search
+2. `searchable`（LLM 改寫版）→ Google Places Text Search
+
+成功且非模糊結果（非縣市行政區層級）→ 立即返回，帶 `source="google_places"`
+
+> **注意**：判斷以 `address` 為準而非 `searchable`，避免 LLM 猜測路名導致 fast path 被略過。
+
+#### Step 2 — TGOS（台灣政府地址 API）
+適合標準門牌地址。查詢順序：`searchable` → `address`
+
+#### Step 3 — Nominatim（OpenStreetMap）
+免費開源，僅接受台灣境內座標。依序查詢：
+1. `searchable`
+2. `searchable + " 台灣"`
+3. `address`
+4. `address + " 台灣"`
+5. 結構化查詢（LLM 解析的 county/city/street）
+
+#### Step 4 — Google Places Text Search（備援）
+Step 1.5 未觸發才到此。查詢順序：`address` → `searchable`
+
+#### Step 5 — Google Maps Geocoding API（最終備援）
+查詢順序：`address` → `searchable`
+全部失敗 → 返回 `None`
+
+---
+
+#### 精確度判斷（`_location_is_precise`）
+
+滿足以下**任一**條件即視為精確：
+
+| 條件 | 說明 |
+|------|------|
+| `coords.source == "google_places"` | Google Places 找到特定商家/地標 |
+| 縣市 ＋ 路名 ＋ 號 同時出現在 `location_text` | 符合標準門牌格式 |
+
+#### 追問機制（`_location_hint`）
+
+判定不精確時，依缺少的成分決定追問內容：
+
+| 缺少 | 追問訊息 |
+|------|---------|
+| 縣市 | 「請問事發地點是哪個縣市？」 |
+| 路名 | 「請問附近的路名或地標是什麼？」 |
+| 門號 | 「請問門牌號碼或更精確的位置？」 |
+
+最多追問 3 次（`MAX_GEOCODING_RETRIES = 3`），超過後強制建立事件（`location_approximate=true`）。
+
+#### 最終決策
+
+| 狀況 | 結果 |
+|------|------|
+| geocoding 成功且精確 | `location_approximate = false`，使用實際座標 |
+| geocoding 失敗或不精確，且未超過追問上限 | 觸發追問，等使用者補充後重試 |
+| 超過追問上限 或 已在追問流程中 | `location_approximate = true`，座標用台灣中心點 (23.5, 121.0) |
 
 ### 去重流程
 ```

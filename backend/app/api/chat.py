@@ -20,6 +20,38 @@ router = APIRouter()
 MAX_GEOCODING_RETRIES = 3
 
 
+def _location_is_precise(location_text: str, coords: dict | None) -> bool:
+    """True when the location can be resolved to a specific building.
+
+    Two paths to precision:
+    - Google Places returned a result (specific establishment found), OR
+    - location_text has county/city + road + door number (號)
+    """
+    if coords and coords.get("source") == "google_places":
+        return True
+    text = location_text
+    has_county = any(w in text for w in ["縣", "市"])
+    has_road   = any(w in text for w in ["路", "街", "大道", "巷", "弄", "道"])
+    has_number = "號" in text
+    return has_county and has_road and has_number
+
+
+def _location_hint(location_text: str) -> str:
+    """Return a targeted follow-up question based on which address component is missing."""
+    text = location_text
+    has_county = any(w in text for w in ["縣", "市"])
+    has_road = any(w in text for w in ["路", "街", "大道", "巷", "弄", "道"])
+    has_number = "號" in text
+
+    if not has_county:
+        return "請問事發地點是哪個縣市？（例如：台北市、新北市、花蓮縣）"
+    if not has_road:
+        return "請問附近的路名或地標是什麼？（例如：中正路、捷運站、學校名稱）"
+    if not has_number:
+        return "請問門牌號碼或更精確的位置？（例如：123號，或附近明顯建築物）"
+    return "請提供更具體的地址，例如縣市＋區＋路段＋門牌，或附近知名地標。"
+
+
 async def _process_tool_use(
     tool_data: dict,
     raw_message: str,
@@ -173,13 +205,16 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             collected_text = ""
             is_continuation = False  # 已進入追問流程，避免無限遞迴
 
-            # 計算歷史訊息中已失敗的 geocoding 次數（跨多輪對話）
+            # 計算歷史訊息中已失敗/不精確的 geocoding 次數（跨多輪對話）
             failed_attempts = sum(
                 1 for m in messages
                 if isinstance(m.get("content"), list)
                 and any(
                     item.get("type") == "tool_result"
-                    and "geocoding 失敗" in (item.get("content") or "")
+                    and (
+                        "geocoding 失敗" in (item.get("content") or "")
+                        or "地址不夠精確" in (item.get("content") or "")
+                    )
                     for item in m["content"]
                 )
             )
@@ -194,11 +229,13 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                     tool_use_id = chunk["tool_use_id"]
 
                     # 嘗試 geocode
-                    coords = await geocode_address(tool_data["location_text"])
+                    location = tool_data["location_text"]
+                    coords = await geocode_address(location)
                     geocoding_ok = coords is not None
+                    location_precise = _location_is_precise(location, coords)
 
-                    if not geocoding_ok and not is_continuation and failed_attempts < MAX_GEOCODING_RETRIES:
-                        # Geocoding 失敗且未超過重試上限 → 透過 tool_result 讓 Claude 追問使用者
+                    if (not geocoding_ok or not location_precise) and not is_continuation and failed_attempts < MAX_GEOCODING_RETRIES:
+                        # Geocoding 失敗或地址不夠精確且未超過重試上限 → 透過 tool_result 讓 Claude 追問使用者
                         assistant_content = []
                         if collected_text:
                             assistant_content.append({"type": "text", "text": collected_text})
@@ -208,12 +245,15 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             "name": "submit_disaster_report",
                             "input": tool_data,
                         })
-                        location = tool_data["location_text"]
+                        hint = _location_hint(location)
+                        if not geocoding_ok:
+                            reason = f"系統無法辨識地址「{location}」的確切位置（geocoding 失敗）。"
+                        else:
+                            reason = f"地址「{location}」尚未精確到建築物等級（地址不夠精確）。"
                         tool_result_msg = (
-                            f"系統無法辨識地址「{location}」的確切位置（geocoding 失敗）。"
-                            "請向使用者追問更具體的地點，例如：縣市＋區＋路段＋門牌，"
-                            "或附近知名地標（如學校、公園、捷運站）。"
-                            "不要自行推測地址，必須等使用者提供更具體資訊後再重新提交通報。"
+                            reason
+                            + f"請向使用者追問：{hint}"
+                            + "不要自行推測地址，必須等使用者提供更具體資訊後再重新提交通報。"
                         )
                         continuation_messages = messages + [
                             {"role": "assistant", "content": assistant_content},
@@ -258,4 +298,4 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 friendly = f"AI 服務發生錯誤，請稍後再試。（{error_msg[:120]}）"
             yield _sse({"type": "error", "message": friendly})
 
-    return EventSourceResponse(event_generator())
+    return EventSourceResponse(event_generator(), ping=15)

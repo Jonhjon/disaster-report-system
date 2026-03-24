@@ -155,7 +155,11 @@ export function streamChat(
     })
     .catch((err) => {
       if (err.name !== "AbortError") {
-        onError(err.message);
+        const msg =
+          err.message === "Failed to fetch"
+            ? "無法連線至伺服器，請確認後端服務是否正常運作。"
+            : err.message;
+        onError(msg);
       }
     });
 

@@ -5,7 +5,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/api": "http://localhost:8000",
+      "/api": {
+        target: "http://localhost:8000",
+        proxyTimeout: 0,
+        timeout: 0,
+      },
     },
   },
 });

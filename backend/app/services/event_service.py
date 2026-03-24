@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.models.disaster_event import DisasterEvent
 from app.models.disaster_report import DisasterReport
-from app.schemas.event import EventResponse, EventUpdate
+from app.schemas.event import EventResponse, EventUpdate, EventMapItem
+from geoalchemy2.functions import ST_SetSRID, ST_MakePoint
 
 
 def _event_to_response(event: DisasterEvent) -> EventResponse:
@@ -28,6 +29,7 @@ def _event_to_response(event: DisasterEvent) -> EventResponse:
         trapped=event.trapped,
         status=event.status,
         report_count=event.report_count,
+        location_approximate=event.location_approximate,
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
@@ -198,6 +200,45 @@ def get_map_events(
                 "status": event.status,
                 "report_count": event.report_count,
                 "occurred_at": event.occurred_at,
+                "location_approximate": event.location_approximate,
             }
         )
     return items
+
+
+def update_event_location(
+    db: Session, event_id: UUID, location_text: str, coords: dict
+) -> EventMapItem | None:
+    """Update event location coordinates and clear the approximate flag."""
+    row = (
+        db.query(
+            DisasterEvent,
+            ST_Y(DisasterEvent.location).label("lat"),
+            ST_X(DisasterEvent.location).label("lng"),
+        )
+        .filter(DisasterEvent.id == event_id)
+        .first()
+    )
+    if not row:
+        return None
+    event, _, _ = row
+
+    point = ST_SetSRID(ST_MakePoint(coords["longitude"], coords["latitude"]), 4326)
+    event.location = point
+    event.location_text = location_text
+    event.location_approximate = False
+    db.commit()
+    db.refresh(event)
+
+    return EventMapItem(
+        id=event.id,
+        title=event.title,
+        disaster_type=event.disaster_type,
+        severity=event.severity,
+        latitude=coords["latitude"],
+        longitude=coords["longitude"],
+        status=event.status,
+        report_count=event.report_count,
+        occurred_at=event.occurred_at,
+        location_approximate=False,
+    )

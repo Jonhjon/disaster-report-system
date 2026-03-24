@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# 把 backend 目錄加入 Python 路徑，讓測試能找到 app 模組
+backend_dir = Path(__file__).parent.parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 from uuid import uuid4

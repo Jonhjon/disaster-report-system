@@ -112,6 +112,21 @@ data: {"type": "done"}
 }
 ```
 
+### PATCH /api/events/{id}/location
+更新事件位置資訊（地址修正用）。
+
+**Request Body:**
+```json
+{
+  "location_text": "台北市中正區重慶南路一段122號",
+  "latitude": 25.0418,
+  "longitude": 121.5199,
+  "location_approximate": false
+}
+```
+
+**Response:** 更新後的事件物件（同 GET /api/events/{id} 格式）
+
 ### GET /api/events/{id}/reports
 取得事件的所有通報。
 

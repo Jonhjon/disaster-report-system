@@ -6,9 +6,17 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.disaster_report import DisasterReport
-from app.schemas.event import EventListResponse, EventMapResponse, EventResponse, EventUpdate
+from app.schemas.event import (
+    EventListResponse,
+    EventLocationUpdate,
+    EventMapItem,
+    EventMapResponse,
+    EventResponse,
+    EventUpdate,
+)
 from app.schemas.report import ReportListResponse, ReportResponse
 from app.services import event_service
+from app.services.geocoding_service import geocode_address
 
 router = APIRouter()
 
@@ -76,6 +84,21 @@ def update_event(event_id: UUID, data: EventUpdate, db: Session = Depends(get_db
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
+
+
+@router.patch("/events/{event_id}/location", response_model=EventMapItem)
+async def update_event_location(
+    event_id: UUID,
+    body: EventLocationUpdate,
+    db: Session = Depends(get_db),
+):
+    coords = await geocode_address(body.location_text)
+    if not coords:
+        raise HTTPException(status_code=422, detail="無法 geocode 此地址，請提供更具體的地址")
+    result = event_service.update_event_location(db, event_id, body.location_text, coords)
+    if not result:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return result
 
 
 @router.delete("/events/{event_id}", status_code=204)

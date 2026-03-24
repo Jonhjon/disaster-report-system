@@ -62,7 +62,15 @@ function DisasterMap() {
           />
           <MapEventLoader filters={filters} onEventsLoaded={setEvents} />
           {events.map((event) => (
-            <EventMarker key={event.id} event={event} />
+            <EventMarker
+              key={event.id}
+              event={event}
+              onLocationUpdated={(updated) =>
+                setEvents((prev) =>
+                  prev.map((e) => (e.id === updated.id ? updated : e))
+                )
+              }
+            />
           ))}
         </MapContainer>
       </div>

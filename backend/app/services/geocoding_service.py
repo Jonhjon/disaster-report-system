@@ -16,6 +16,13 @@ _TW_LON = (119.5, 122.5)
 # Excludes "道" to avoid false positives like "道明國中"
 _ROAD_WORDS = ["路", "街", "大道", "巷", "弄"]
 
+# 場所後綴詞 — 建築物內部空間，本身非獨立 POI
+_PLACE_SUFFIXES = [
+    "教室", "操場", "宿舍", "停車場", "大廳", "走廊",
+    "餐廳", "圖書館", "辦公室", "會議室", "球場", "廣場",
+    "入口", "出口", "地下室", "頂樓",
+]
+
 # Google Places types considered too vague for precise geocoding
 VAGUE_TYPES = {
     "locality",
@@ -35,6 +42,15 @@ _CACHE_MAX = 500
 def _in_taiwan(lat: float, lon: float) -> bool:
     """Return True if the coordinate falls within Taiwan's bounding box."""
     return _TW_LAT[0] <= lat <= _TW_LAT[1] and _TW_LON[0] <= lon <= _TW_LON[1]
+
+
+def _strip_place_suffix(text: str) -> str | None:
+    """若 text 結尾有場所後綴詞，回傳剝除後的核心名稱；否則回傳 None。"""
+    for suffix in _PLACE_SUFFIXES:
+        if text.endswith(suffix):
+            core = text[: -len(suffix)].strip()
+            return core if core else None
+    return None
 
 
 async def extract_structured_address(text: str) -> str:
@@ -245,6 +261,12 @@ async def _geocode_address_impl(address: str) -> dict | None:
             named_place_queries.append(searchable)
         for q in named_place_queries:
             result = await geocode_google_places(q)
+            if result:
+                return result
+        # 剝除場所後綴後重試（例如「三育基督學院教室」→「三育基督學院」）
+        core = _strip_place_suffix(address)
+        if core:
+            result = await geocode_google_places(core)
             if result:
                 return result
 

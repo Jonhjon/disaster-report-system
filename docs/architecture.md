@@ -142,7 +142,7 @@
 #### Step 0 — 快取檢查
 相同字串曾查詢過 → 直接返回（上限 500 筆，process-level）
 
-#### Step 1 — LLM 改寫（Gemini Flash）
+#### Step 1 — LLM 改寫（Claude Haiku）
 `extract_structured_address()` 將口語地點轉成可查格式
 - 輸入：「花蓮的 Booms Burger」
 - 輸出 `searchable`：「花蓮縣花蓮市中正路 Booms Burger」（可能含猜測路名）
@@ -153,13 +153,17 @@
 觸發時查詢順序：
 1. `address`（原始文字）→ Google Places Text Search
 2. `searchable`（LLM 改寫版）→ Google Places Text Search
+3. 若 address 結尾含場所後綴詞（教室/操場/停車場/大廳/走廊/餐廳/圖書館等），
+   以 `_strip_place_suffix()` 剝除後綴 → 再次查詢 Google Places
 
 成功且非模糊結果（非縣市行政區層級）→ 立即返回，帶 `source="google_places"`
 
 > **注意**：判斷以 `address` 為準而非 `searchable`，避免 LLM 猜測路名導致 fast path 被略過。
 
-#### Step 2 — TGOS（台灣政府地址 API）
+#### Step 2 — TGOS（台灣政府地址 API）⚠️ 暫停使用
 適合標準門牌地址。查詢順序：`searchable` → `address`
+
+> **目前停用**：TGOS 端點 `https://addr.tgos.tw/addr/api/addrquery/` 回傳 404，程式碼已註解。待找到可用端點後再啟用。
 
 #### Step 3 — Nominatim（OpenStreetMap）
 免費開源，僅接受台灣境內座標。依序查詢：
@@ -171,6 +175,9 @@
 
 #### Step 4 — Google Places Text Search（備援）
 Step 1.5 未觸發才到此。查詢順序：`address` → `searchable`
+
+Google Places 若回傳純行政區劃層級（`VAGUE_TYPES`：`locality` / `administrative_area_level_*` / `country` / `political` 等），
+視為模糊結果，拒絕接受，繼續 fallback。
 
 #### Step 5 — Google Maps Geocoding API（最終備援）
 查詢順序：`address` → `searchable`
@@ -185,7 +192,10 @@ Step 1.5 未觸發才到此。查詢順序：`address` → `searchable`
 | 條件 | 說明 |
 |------|------|
 | `coords.source == "google_places"` | Google Places 找到特定商家/地標 |
-| 縣市 ＋ 路名 ＋ 號 同時出現在 `location_text` | 符合標準門牌格式 |
+| 縣市 ＋ 路名 ＋ 號 同時出現在 `location_text`（路名判斷字詞：路/街/大道/巷/弄/道） | 符合標準門牌格式 |
+
+> **注意**：Step 1.5 觸發條件使用 `_ROAD_WORDS = ["路","街","大道","巷","弄"]`（5 個，不含「道」）；
+> `_location_is_precise` 另包含「道」共 6 個，兩者刻意不同。
 
 #### 追問機制（`_location_hint`）
 
@@ -198,6 +208,9 @@ Step 1.5 未觸發才到此。查詢順序：`address` → `searchable`
 | 門號 | 「請問門牌號碼或更精確的位置？」 |
 
 最多追問 3 次（`MAX_GEOCODING_RETRIES = 3`），超過後強制建立事件（`location_approximate=true`）。
+
+- **跨輪計數**：`failed_attempts` 掃描整個對話歷史，統計含「geocoding 失敗」或「地址不夠精確」的 tool_result 訊息數量（非單輪計數）
+- **continuation 強制接受**：追問過程中若 LLM 再次呼叫 `submit_disaster_report`，強制接受建立通報，不再觸發第二次追問
 
 #### 最終決策
 

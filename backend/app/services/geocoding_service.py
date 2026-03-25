@@ -271,13 +271,14 @@ async def _geocode_address_impl(address: str) -> dict | None:
                 return result
 
     # Step 2: TGOS (try LLM-extracted query first, then original)
-    tgos_queries = [searchable]
-    if address != searchable:
-        tgos_queries.append(address)
-    for q in tgos_queries:
-        result = await geocode_tgos(q)
-        if result:
-            return result
+    # TODO: TGOS endpoint (https://addr.tgos.tw/addr/api/addrquery/) returns 404 — disabled until a valid endpoint is found
+    # tgos_queries = [searchable]
+    # if address != searchable:
+    #     tgos_queries.append(address)
+    # for q in tgos_queries:
+    #     result = await geocode_tgos(q)
+    #     if result:
+    #         return result
 
     # Step 3: Nominatim fallback — free-text queries
     url = "https://nominatim.openstreetmap.org/search"

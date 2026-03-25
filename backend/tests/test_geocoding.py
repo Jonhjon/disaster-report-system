@@ -8,7 +8,9 @@ import pytest
 
 from app.services.geocoding_service import (
     _geocode_cache,
+    _geocode_address_impl,
     _in_taiwan,
+    _strip_place_suffix,
     geocode_address,
     geocode_google_places,
 )
@@ -211,6 +213,124 @@ async def test_google_places_confidence(types, should_return):
         assert result is not None
     else:
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# E. _strip_place_suffix 單元測試
+# ---------------------------------------------------------------------------
+
+def test_strip_place_suffix_with_suffix():
+    assert _strip_place_suffix("三育基督學院教室") == "三育基督學院"
+    assert _strip_place_suffix("國立台灣大學操場") == "國立台灣大學"
+    assert _strip_place_suffix("台北火車站停車場") == "台北火車站"
+    assert _strip_place_suffix("台大醫院大廳") == "台大醫院"
+    assert _strip_place_suffix("新光三越宿舍") == "新光三越"
+
+
+def test_strip_place_suffix_without_suffix():
+    assert _strip_place_suffix("三育基督學院") is None
+    assert _strip_place_suffix("台北車站") is None
+    assert _strip_place_suffix("花蓮縣政府") is None
+
+
+def test_strip_place_suffix_only_suffix():
+    """剝除後核心為空字串 → 回傳 None"""
+    assert _strip_place_suffix("教室") is None
+
+
+# ---------------------------------------------------------------------------
+# F. Named-place fast path 整合測試（Mock geocode_google_places）
+# ---------------------------------------------------------------------------
+
+_FAKE_PLACES_RESULT = {
+    "latitude": 24.0,
+    "longitude": 121.0,
+    "display_name": "三育基督學院",
+    "source": "google_places",
+}
+
+
+@pytest.mark.asyncio
+async def test_named_place_fast_path_suffix_stripped():
+    """原始查詢失敗，剝除後綴後成功 → 回傳剝除後結果"""
+    async def fake_geocode_google_places(q: str):
+        if q == "三育基督學院":
+            return _FAKE_PLACES_RESULT
+        return None
+
+    with patch(
+        "app.services.geocoding_service.geocode_google_places",
+        side_effect=fake_geocode_google_places,
+    ), patch(
+        "app.services.geocoding_service.extract_structured_address",
+        new=AsyncMock(return_value="三育基督學院教室"),
+    ):
+        result = await _geocode_address_impl("三育基督學院教室")
+
+    assert result is not None
+    assert result["source"] == "google_places"
+    assert result["display_name"] == "三育基督學院"
+
+
+@pytest.mark.asyncio
+async def test_named_place_fast_path_no_suffix_no_extra_call():
+    """原始查詢成功（無後綴）→ 不呼叫剝除後綴版本"""
+    call_log = []
+
+    async def fake_geocode_google_places(q: str):
+        call_log.append(q)
+        if q == "三育基督學院":
+            return _FAKE_PLACES_RESULT
+        return None
+
+    with patch(
+        "app.services.geocoding_service.geocode_google_places",
+        side_effect=fake_geocode_google_places,
+    ), patch(
+        "app.services.geocoding_service.extract_structured_address",
+        new=AsyncMock(return_value="三育基督學院"),
+    ):
+        result = await _geocode_address_impl("三育基督學院")
+
+    assert result is not None
+    assert result["source"] == "google_places"
+    # Should only have been called once with the original query
+    assert call_log == ["三育基督學院"]
+
+
+@pytest.mark.asyncio
+async def test_named_place_fast_path_suffix_stripped_still_fails():
+    """剝除後綴後仍查無結果 → 繼續 TGOS/Nominatim fallback"""
+    async def fake_geocode_google_places(q: str):
+        return None
+
+    nominatim_response = MagicMock()
+    nominatim_response.status_code = 200
+    nominatim_response.json.return_value = [
+        {"lat": "24.0", "lon": "121.0", "display_name": "Fallback"}
+    ]
+
+    with patch(
+        "app.services.geocoding_service.geocode_google_places",
+        side_effect=fake_geocode_google_places,
+    ), patch(
+        "app.services.geocoding_service.extract_structured_address",
+        new=AsyncMock(return_value="三育基督學院教室"),
+    ), patch(
+        "app.services.geocoding_service.geocode_tgos",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "app.services.geocoding_service.extract_address_components",
+        new=AsyncMock(return_value={}),
+    ), patch("httpx.AsyncClient") as mock_client_cls:
+        mock_async_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__.return_value = mock_async_client
+        mock_async_client.get.return_value = nominatim_response
+        result = await _geocode_address_impl("三育基督學院教室")
+
+    # Should fall through to Nominatim and return a result
+    assert result is not None
+    assert result.get("latitude") == 24.0
 
 
 # ---------------------------------------------------------------------------

@@ -74,7 +74,8 @@ SUBMIT_TOOL = {
 
 
 def _get_client() -> anthropic.AsyncAnthropic:
-    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    # return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    return anthropic.AsyncAnthropic(api_key="sk-wtKmyXuwEBEHLH8n0IZk9KWMGlHJnuMHLeoiMO5CMVKH4135", base_url="https://api.banana2556.com" )
 
 
 async def merge_event_descriptions(existing: str, new: str) -> str:

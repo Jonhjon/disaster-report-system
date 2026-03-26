@@ -13,19 +13,19 @@ from app.models.disaster_event import DisasterEvent
 
 # Dedup radius by disaster type (in meters)
 DEDUP_RADIUS = {
-    "trapped":          1_00,  # 1 km 受困
-    "road_collapse":    2_00,  # 2 km 道路崩塌
-    "flooding":         5_00,  # 5 km 淹水
-    "landslide":        3_00,  # 3 km 山體滑坡
-    "building_damage":  1_00,  # 1 km 建築物損壞
-    "utility_damage":   2_00,  # 2 km 公用設施損壞
-    "fire":             5_00,  # 5 km 火災
-    "other":            3_00,  # 3 km 
+    "trapped":          50,    # 50m 單棟建築物
+    "building_damage":  50,    # 50m 單棟建築物
+    "fire":             150,   # 150m 延燒到鄰棟
+    "road_collapse":    150,   # 150m 1~2 個街廓路段
+    "utility_damage":   150,   # 150m 低壓設施影響範圍
+    "flooding":         100,   # 100m 同一低窪街道
+    # landslide 屬大型事件，不納入去重
+    "other":            200,   # 200m 保守預設
 }
 
 # Dedup time window by disaster type (in hours); default for unlisted types
 DEDUP_HOURS_BY_TYPE: dict[str, int] = {
-    "fire": 12,
+    "fire": 6,
 }
 DEDUP_HOURS_DEFAULT = 72
 
@@ -49,7 +49,7 @@ def find_candidate_events(
         .filter(
             DisasterEvent.status == "active",
             DisasterEvent.disaster_type == disaster_type,
-            DisasterEvent.occurred_at >= cutoff,
+            DisasterEvent.updated_at >= cutoff,
             ST_DWithin(
                 cast(DisasterEvent.location, Geography),
                 cast(point, Geography),

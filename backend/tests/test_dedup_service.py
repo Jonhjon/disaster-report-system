@@ -66,7 +66,7 @@ def test_find_candidate_events_fire_radius():
 
         mock_dwithin.assert_called_once()
         radius_arg = mock_dwithin.call_args[0][2]
-        assert radius_arg == 5_000
+        assert radius_arg == 150
 
 
 # Case 13: LLM 回傳 "YES" → True（視為重複事件）

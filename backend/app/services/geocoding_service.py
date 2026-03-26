@@ -67,7 +67,8 @@ async def extract_structured_address(text: str) -> str:
     client = anthropic.AsyncAnthropic(api_key=api_key)
     try:
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            # model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=100,
             messages=[
                 {
@@ -109,7 +110,8 @@ async def extract_address_components(text: str) -> dict:
     client = anthropic.AsyncAnthropic(api_key=api_key)
     try:
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            # model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=150,
             messages=[
                 {

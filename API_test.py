@@ -4,7 +4,8 @@ import os
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 message = client.messages.create(
-    model="claude-haiku-4-5-20251001", # 模型型號
+    # model="claude-haiku-4-5-20251001", # 模型型號
+    model="claude-sonnet-4-6",
     max_tokens=1000, # 選用，回傳token的最大長度，避免爆預算
     messages=[
         {"role": "user", "content": "test"}

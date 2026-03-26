@@ -134,7 +134,8 @@ async def llm_judge_duplicate(new_desc: str, candidate: DisasterEvent) -> bool:
     )
     try:
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            # model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=10,
             messages=[{"role": "user", "content": prompt}],
         )

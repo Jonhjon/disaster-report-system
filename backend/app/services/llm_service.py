@@ -75,7 +75,7 @@ SUBMIT_TOOL = {
 
 def _get_client() -> anthropic.AsyncAnthropic:
     # return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    return anthropic.AsyncAnthropic(api_key="sk-wtKmyXuwEBEHLH8n0IZk9KWMGlHJnuMHLeoiMO5CMVKH4135", base_url="https://api.banana2556.com" )
+    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY, base_url="https://api.banana2556.com" )
 
 
 async def merge_event_descriptions(existing: str, new: str) -> str:
@@ -88,7 +88,8 @@ async def merge_event_descriptions(existing: str, new: str) -> str:
     client = _get_client()
     try:
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            # model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=300,
             messages=[{
                 "role": "user",
@@ -113,7 +114,8 @@ async def reextract_numbers_from_description(description: str) -> dict:
     client = _get_client()
     try:
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            # model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=100,
             messages=[{
                 "role": "user",

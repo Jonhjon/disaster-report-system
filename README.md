@@ -51,6 +51,7 @@ cp .env.example .env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/disaster_report
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxx
 CLAUDE_MODEL=claude-haiku-4-5-20251001   # 可選，預設使用 claude-haiku-4-5-20251001
+GOOGLE_MAPS_API_KEY=                      # 選用：啟用 Google Places 地理編碼，留空則使用 Nominatim (OSM)
 ```
 
 ### 步驟 3：安裝後端套件與初始化資料庫
@@ -99,6 +100,17 @@ npm run dev
 
 ---
 
+## 技術堆疊
+
+| 層級 | 技術 |
+|------|------|
+| 後端 | Python 3.11 · FastAPI · SQLAlchemy 2 · Alembic |
+| 前端 | React 18 · TypeScript · Vite · Tailwind CSS |
+| 地圖 | Leaflet · react-leaflet · OpenStreetMap |
+| 資料庫 | PostgreSQL 16 · PostGIS 3 |
+| LLM | Anthropic Claude API（Tool Use · SSE 串流） |
+| 地理編碼 | Nominatim (OSM)・Google Places（選用） |
+
 ## 功能說明
 
 | 頁面 | 說明 |
@@ -113,12 +125,28 @@ npm run dev
 
 ```
 智慧災害通報系統/
-├── backend/          # Python FastAPI 後端
-├── frontend/         # React 前端
-├── docs/             # 系統設計文件
+├── backend/                  # Python FastAPI 後端
+│   ├── app/
+│   │   ├── api/              # 路由（chat、events、reports、monitor）
+│   │   ├── models/           # SQLAlchemy 資料模型
+│   │   ├── schemas/          # Pydantic 請求 / 回應結構
+│   │   ├── services/         # 業務邏輯（LLM、去重、地理編碼）
+│   │   ├── config.py         # 環境變數設定
+│   │   └── main.py           # FastAPI 應用程式進入點
+│   ├── alembic/              # 資料庫遷移腳本
+│   ├── tests/                # 後端測試
+│   ├── .env.example
+│   └── requirements.txt
+├── frontend/                 # React 前端
+│   └── src/
+│       ├── components/       # UI 元件（地圖、聊天、事件）
+│       ├── pages/            # 頁面（儀表板、通報、列表、詳情、說明）
+│       ├── services/         # API 呼叫封裝
+│       └── types/            # TypeScript 型別定義
+├── docs/                     # 系統設計文件
 ├── docker-compose.yml
-├── start.ps1         # Windows 一鍵啟動腳本
-└── stop.ps1          # Windows 一鍵停止腳本
+├── start.ps1                 # Windows 一鍵啟動腳本
+└── stop.ps1                  # Windows 一鍵停止腳本
 ```
 
 ## 停止服務

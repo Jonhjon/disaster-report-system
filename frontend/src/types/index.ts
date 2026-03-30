@@ -35,6 +35,7 @@ export type DisasterType =
   | "road_collapse"
   | "flooding"
   | "landslide"
+  | "small_landslide"
   | "building_damage"
   | "utility_damage"
   | "fire"
@@ -83,6 +84,7 @@ export const DISASTER_TYPE_LABELS: Record<DisasterType, string> = {
   road_collapse: "路段崩塌",
   flooding: "淹水",
   landslide: "土石流",
+  small_landslide: "小型土石流",
   building_damage: "建物受損",
   utility_damage: "管線/電力受損",
   fire: "火警",
@@ -108,6 +110,7 @@ export const DISASTER_TYPE_COLORS: Record<DisasterType, string> = {
   road_collapse: "#e67e22",
   flooding: "#2980b9",
   landslide: "#d35400",
+  small_landslide: "#8B4513",
   building_damage: "#e74c3c",
   utility_damage: "#f39c12",
   fire: "#c0392b",

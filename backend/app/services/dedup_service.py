@@ -19,6 +19,7 @@ DEDUP_RADIUS = {
     "road_collapse":    150,   # 150m 1~2 個街廓路段
     "utility_damage":   150,   # 150m 低壓設施影響範圍
     "flooding":         100,   # 100m 同一低窪街道
+    "small_landslide":  100,   # 100m 小型土石流
     # landslide 屬大型事件，不納入去重
     "other":            200,   # 200m 保守預設
 }
@@ -27,7 +28,7 @@ DEDUP_RADIUS = {
 DEDUP_HOURS_BY_TYPE: dict[str, int] = {
     "fire": 6,
 }
-DEDUP_HOURS_DEFAULT = 72
+DEDUP_HOURS_DEFAULT = 48
 
 
 def find_candidate_events(

@@ -24,7 +24,7 @@ SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你
 - 引導民眾提供完整的災情資訊
 
 ## 你需要收集的資訊
-1. **災情種類**（必要）：人員受困、路段崩塌、淹水、土石流、建物受損、管線/電力受損、火警、其他
+1. **災情種類**（必要）：人員受困、路段崩塌、淹水、小型土石流、建物受損、管線/電力受損、火警、其他
 2. **災情地點**（必要）：盡量引導到具體地址、路名或知名地標
 3. **嚴重程度**（必要）：1=輕微, 2=中等, 3=嚴重, 4=非常嚴重, 5=極嚴重
 4. **發生時間**（必要）：什麼時候發生的，若民眾不確定請追問，確認無法提供後才可省略
@@ -57,7 +57,7 @@ SUBMIT_TOOL = {
             "disaster_type": {
                 "type": "string",
                 "enum": ["trapped", "road_collapse", "flooding", "landslide",
-                         "building_damage", "utility_damage", "fire", "other"],
+                         "small_landslide", "building_damage", "utility_damage", "fire", "other"],
                 "description": "災情類型"
             },
             "description":    {"type": "string", "description": "災情詳細描述"},

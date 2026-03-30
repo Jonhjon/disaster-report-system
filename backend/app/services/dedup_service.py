@@ -18,7 +18,7 @@ DEDUP_RADIUS = {
     "fire":             150,   # 150m 延燒到鄰棟
     "road_collapse":    150,   # 150m 1~2 個街廓路段
     "utility_damage":   150,   # 150m 低壓設施影響範圍
-    "flooding":         100,   # 100m 同一低窪街道
+    "flooding":         200,   # 200m 單條街道等級
     "small_landslide":  100,   # 100m 小型土石流
     # landslide 屬大型事件，不納入去重
     "other":            200,   # 200m 保守預設

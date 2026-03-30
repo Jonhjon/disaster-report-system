@@ -33,7 +33,7 @@ VAGUE_TYPES = {
     "colloquial_area",
     "political",
 }
-
+MODEL = "claude-sonnet-4.6"
 # In-memory geocoding cache (process-level, resets on restart)
 _geocode_cache: dict[str, dict] = {}
 _CACHE_MAX = 500
@@ -44,6 +44,16 @@ def _in_taiwan(lat: float, lon: float) -> bool:
     return _TW_LAT[0] <= lat <= _TW_LAT[1] and _TW_LON[0] <= lon <= _TW_LON[1]
 
 
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """計算兩座標之間的距離（公尺）。"""
+    from math import asin, cos, radians, sin, sqrt
+    R = 6_371_000
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat, dlon = lat2 - lat1, lon2 - lon1
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    return 2 * R * asin(sqrt(a))
+
+
 def _strip_place_suffix(text: str) -> str | None:
     """若 text 結尾有場所後綴詞，回傳剝除後的核心名稱；否則回傳 None。"""
     for suffix in _PLACE_SUFFIXES:
@@ -51,6 +61,65 @@ def _strip_place_suffix(text: str) -> str | None:
             core = text[: -len(suffix)].strip()
             return core if core else None
     return None
+
+
+_NEARBY_KEYWORDS = re.compile(r".+(?:附近|旁邊|對面|靠近|旁|周邊|邊上|隔壁).+")
+
+
+async def _extract_landmark_pattern(text: str) -> dict | None:
+    """偵測「目標 + 空間關係詞 + 地標」模式。
+    回傳 {"target": str, "landmark": str, "area": str | None} 或 None。
+    """
+    if not _NEARBY_KEYWORDS.search(text):
+        return None  # 快速跳過，不呼叫 LLM
+    api_key = settings.ANTHROPIC_API_KEY
+    if not api_key:
+        return None
+    import anthropic  # noqa: PLC0415
+
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    prompt = (
+        "你是地址解析器，專門識別「在某地標附近找某目標」的查詢模式。\n\n"
+        "判斷規則：\n"
+        "1. 必須同時有空間關係詞（附近、旁邊、對面、靠近、旁、周邊、邊上、隔壁）"
+        "且連接兩個不同的具名場所\n"
+        "2. 若只是一般地址描述（關係詞描述位置而非連接兩場所），回傳 null\n"
+        "3. target = 使用者想找的目標場所；landmark = 參考地標\n"
+        "4. area = 縣市/區域名稱（找不到則為 null）\n\n"
+        "只輸出 JSON，不含說明：\n"
+        '- 符合模式：{"target": "...", "landmark": "...", "area": "...或null"}\n'
+        "- 不符合模式：null\n\n"
+        "範例：\n"
+        '「肯德基附近的麥當勞」→ {"target": "麥當勞", "landmark": "肯德基", "area": null}\n'
+        '「花蓮市中心靠近肯德基的麥當勞」→ {"target": "麥當勞", "landmark": "肯德基", "area": "花蓮市"}\n'
+        '「台北市大安區的7-11」→ null\n'
+        '「麥當勞對面的星巴克」→ {"target": "星巴克", "landmark": "麥當勞", "area": null}\n\n'
+        f"地點描述：\n{text}"
+    )
+    try:
+        message = await client.messages.create(
+            model=MODEL,
+            max_tokens=100,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = message.content[0].text.strip()
+        if raw.lower() == "null" or not raw:
+            return None
+        if raw.startswith("```"):
+            parts = raw.split("```")
+            raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        target = data.get("target", "").strip()
+        landmark = data.get("landmark", "").strip()
+        if not target or not landmark:
+            return None
+        area = data.get("area")
+        area = area.strip() if isinstance(area, str) and area else None
+        return {"target": target, "landmark": landmark, "area": area}
+    except Exception:
+        return None
 
 
 async def extract_structured_address(text: str) -> str:
@@ -68,7 +137,7 @@ async def extract_structured_address(text: str) -> str:
     try:
         message = await client.messages.create(
             # model="claude-haiku-4-5-20251001",
-            model="claude-sonnet-4-6",
+            model=MODEL,
             max_tokens=100,
             messages=[
                 {
@@ -111,7 +180,7 @@ async def extract_address_components(text: str) -> dict:
     try:
         message = await client.messages.create(
             # model="claude-haiku-4-5-20251001",
-            model="claude-sonnet-4-6",
+            model=MODEL,
             max_tokens=150,
             messages=[
                 {
@@ -207,6 +276,100 @@ async def geocode_google_places(query: str) -> dict | None:
     return None
 
 
+async def geocode_nearby_search(
+    keyword: str,
+    lat: float,
+    lon: float,
+    radius: int = 500,
+) -> dict | None:
+    """在指定座標附近搜尋 POI，使用 Google Places Nearby Search API。"""
+    api_key = settings.GOOGLE_MAPS_API_KEY
+    if not api_key:
+        return None
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    params = {
+        "location": f"{lat},{lon}",
+        "radius": radius,
+        "keyword": keyword,
+        "key": api_key,
+        "language": "zh-TW",
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=10)
+            data = response.json()
+            if data.get("status") == "OK" and data.get("results"):
+                result = data["results"][0]
+                result_types = set(result.get("types", []))
+                if result_types and result_types.issubset(VAGUE_TYPES):
+                    return None
+                loc = result["geometry"]["location"]
+                r_lat, r_lon = loc["lat"], loc["lng"]
+                if not _in_taiwan(r_lat, r_lon):
+                    return None
+                return {
+                    "latitude": r_lat,
+                    "longitude": r_lon,
+                    "display_name": result.get("vicinity", result.get("name", keyword)),
+                    "source": "google_nearby",
+                }
+    except Exception:
+        pass
+    return None
+
+
+async def geocode_nearby_candidates(
+    keyword: str,
+    lat: float,
+    lon: float,
+    radius: int = 500,
+    limit: int = 4,
+) -> list[dict]:
+    """在指定座標附近搜尋多筆 POI，按距離排序。
+
+    回傳 list[{"name", "address", "latitude", "longitude", "distance_m"}]
+    供消歧義流程使用。空列表表示無符合結果。
+    """
+    api_key = settings.GOOGLE_MAPS_API_KEY
+    if not api_key:
+        return []
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    params = {
+        "location": f"{lat},{lon}",
+        "radius": radius,
+        "keyword": keyword,
+        "key": api_key,
+        "language": "zh-TW",
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=10)
+            data = response.json()
+            if data.get("status") != "OK" or not data.get("results"):
+                return []
+            candidates = []
+            for result in data["results"][: limit * 2]:
+                result_types = set(result.get("types", []))
+                if result_types and result_types.issubset(VAGUE_TYPES):
+                    continue
+                loc = result["geometry"]["location"]
+                r_lat, r_lon = loc["lat"], loc["lng"]
+                if not _in_taiwan(r_lat, r_lon):
+                    continue
+                dist = _haversine_m(lat, lon, r_lat, r_lon)
+                candidates.append({
+                    "name": result.get("name", keyword),
+                    "address": result.get("vicinity", ""),
+                    "latitude": r_lat,
+                    "longitude": r_lon,
+                    "distance_m": round(dist),
+                })
+            candidates.sort(key=lambda c: c["distance_m"])
+            return candidates[:limit]
+    except Exception:
+        return []
+
+
 async def geocode_google(address: str) -> dict | None:
     """Query Google Maps Geocoding API.
 
@@ -253,6 +416,37 @@ async def _geocode_address_impl(address: str) -> dict | None:
     """
     # Step 1: LLM-assisted address extraction
     searchable = await extract_structured_address(address)
+
+    # Step 0: Two-stage geocoding for "A附近的B" landmark pattern
+    landmark_info = await _extract_landmark_pattern(address)
+    if landmark_info is not None:
+        target = landmark_info["target"]
+        landmark = landmark_info["landmark"]
+        area = landmark_info["area"]
+        landmark_query = f"{area} {landmark}".strip() if area else landmark
+        landmark_result = await geocode_google_places(landmark_query)
+        if landmark_result is not None:
+            target_query = f"{area} {target}".strip() if area else target
+            for radius in (500, 1500):
+                candidates = await geocode_nearby_candidates(
+                    keyword=target_query,
+                    lat=landmark_result["latitude"],
+                    lon=landmark_result["longitude"],
+                    radius=radius,
+                )
+                if not candidates:
+                    continue
+                closest = candidates[0]  # 已按距離排序，第一筆最近
+                result = {
+                    "latitude": closest["latitude"],
+                    "longitude": closest["longitude"],
+                    "display_name": closest["address"] or closest["name"],
+                    "source": "google_nearby",
+                }
+                if len(candidates) > 1:
+                    result["candidates"] = candidates  # 多個候選，供消歧義使用
+                return result
+    # landmark 找不到或 Nearby Search 全部失敗 → fallback 繼續現有流程
 
     # Step 1.5: Named-place fast path
     # If no road-name characters present, treat as a named place (school, store, landmark)

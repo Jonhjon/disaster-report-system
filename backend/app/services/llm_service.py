@@ -14,6 +14,8 @@ from app.models.llm_log import LLMLog
 
 MAX_HISTORY = 20  # 保留最近 20 則訊息，避免 token 過多
 
+MODEL = "claude-sonnet-4.6"
+
 SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你的任務是協助民眾通報災情。
 
 ## 你的角色
@@ -26,7 +28,7 @@ SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你
 2. **災情地點**（必要）：盡量引導到具體地址、路名或知名地標
 3. **嚴重程度**（必要）：1=輕微, 2=中等, 3=嚴重, 4=非常嚴重, 5=極嚴重
 4. **發生時間**（必要）：什麼時候發生的，若民眾不確定請追問，確認無法提供後才可省略
-5. **傷亡狀況**：死亡、受傷、受困人數
+5. **傷亡狀況**（必要）：死亡、受傷、受困人數
 6. **詳細描述**：災情現場狀況
 
 ## 對話策略
@@ -89,7 +91,7 @@ async def merge_event_descriptions(existing: str, new: str) -> str:
     try:
         message = await client.messages.create(
             # model="claude-haiku-4-5-20251001",
-            model="claude-sonnet-4-6",
+            model=MODEL,
             max_tokens=300,
             messages=[{
                 "role": "user",
@@ -115,7 +117,7 @@ async def reextract_numbers_from_description(description: str) -> dict:
     try:
         message = await client.messages.create(
             # model="claude-haiku-4-5-20251001",
-            model="claude-sonnet-4-6",
+            model=MODEL,
             max_tokens=100,
             messages=[{
                 "role": "user",

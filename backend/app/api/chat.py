@@ -52,6 +52,16 @@ def _location_hint(location_text: str) -> str:
     return "請提供更具體的地址，例如縣市＋區＋路段＋門牌，或附近知名地標。"
 
 
+def _format_candidates_hint(candidates: list[dict]) -> str:
+    """將候選地點清單格式化為供 LLM 詢問使用者的提示文字。"""
+    lines = ["系統在附近找到多個符合地點，請向使用者確認是哪一個："]
+    for i, c in enumerate(candidates, 1):
+        dist = c.get("distance_m", "?")
+        lines.append(f"{i}. {c['name']}（{c['address']}，距離約 {dist} 公尺）")
+    lines.append("請列出選項讓使用者選擇編號，使用者確認後以正確名稱重新提交通報。")
+    return "\n".join(lines)
+
+
 async def _process_tool_use(
     tool_data: dict,
     raw_message: str,
@@ -234,7 +244,46 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                     geocoding_ok = coords is not None
                     location_precise = _location_is_precise(location, coords)
 
-                    if (not geocoding_ok or not location_precise) and not is_continuation and failed_attempts < MAX_GEOCODING_RETRIES:
+                    candidates_list = coords.get("candidates") if coords else None
+                    need_disambiguation = (
+                        bool(candidates_list) and len(candidates_list) > 1
+                        and not is_continuation
+                        and failed_attempts < MAX_GEOCODING_RETRIES
+                    )
+
+                    if need_disambiguation:
+                        # 多個候選 → 透過 tool_result 讓 Claude 列出選項請使用者確認
+                        assistant_content = []
+                        if collected_text:
+                            assistant_content.append({"type": "text", "text": collected_text})
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": tool_use_id,
+                            "name": "submit_disaster_report",
+                            "input": tool_data,
+                        })
+                        tool_result_msg = _format_candidates_hint(candidates_list)
+                        continuation_messages = messages + [
+                            {"role": "assistant", "content": assistant_content},
+                            {"role": "user", "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": tool_use_id,
+                                "content": tool_result_msg,
+                            }]},
+                        ]
+                        collected_text = ""
+                        is_continuation = True
+                        async for cont_chunk in llm_service.stream_chat(continuation_messages):
+                            if cont_chunk["type"] == "text":
+                                yield _sse(cont_chunk)
+                            elif cont_chunk["type"] == "tool_use":
+                                cont_coords = await geocode_address(cont_chunk["data"]["location_text"])
+                                result = await _process_tool_use(cont_chunk["data"], raw_message, db, cont_coords)
+                                yield _sse({"type": "report_submitted", **result})
+                                break
+                            elif cont_chunk["type"] == "done":
+                                yield _sse({"type": "done"})
+                    elif (not geocoding_ok or not location_precise) and not is_continuation and failed_attempts < MAX_GEOCODING_RETRIES:
                         # Geocoding 失敗或地址不夠精確且未超過重試上限 → 透過 tool_result 讓 Claude 追問使用者
                         assistant_content = []
                         if collected_text:

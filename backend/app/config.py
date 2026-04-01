@@ -9,8 +9,9 @@ _env_file = Path(__file__).resolve().parents[1] / ".env"
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/disaster_report"
     ANTHROPIC_API_KEY: str = ""
-    # CLAUDE_MODEL: str = "claude-haiku-4-5-20251001"
-    CLAUDE_MODEL: str = "claude-sonnet-4.6"
+    CLAUDE_MODEL: str = "claude-haiku-4-5-20251001"
+    # CLAUDE_MODEL: str = "gemini-3-flash-n"
+    # CLAUDE_MODEL: str = "claude-opus-4-6"
     GOOGLE_MAPS_API_KEY: str = ""
 
     model_config = {"env_file": str(_env_file)}

@@ -148,6 +148,46 @@ async def llm_judge_duplicate(new_desc: str, candidate: DisasterEvent) -> bool:
         return ratio >= 0.4
 
 
+async def find_and_score_candidates(
+    db: Session,
+    *,
+    disaster_type: str,
+    description: str,
+    latitude: float,
+    longitude: float,
+    occurred_at: datetime,
+) -> list[dict]:
+    """回傳 score >= 0.50 的候選事件及分數，依 score 降序排列。"""
+    candidates = find_candidate_events(
+        db,
+        disaster_type=disaster_type,
+        latitude=latitude,
+        longitude=longitude,
+    )
+
+    scored: list[dict] = []
+    for candidate in candidates:
+        score = _compute_dedup_score(
+            description, latitude, longitude, occurred_at, disaster_type, candidate,
+        )
+        if score >= 0.50:
+            dist_km = _haversine_km(latitude, longitude, 0, 0)
+            try:
+                from geoalchemy2.shape import to_shape  # noqa: PLC0415
+                pt = to_shape(candidate.location)
+                dist_km = _haversine_km(latitude, longitude, pt.y, pt.x)
+            except Exception:
+                pass
+            scored.append({
+                "event": candidate,
+                "score": score,
+                "distance_m": round(dist_km * 1000),
+            })
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored
+
+
 async def is_duplicate(
     new_desc: str,
     new_lat: float,

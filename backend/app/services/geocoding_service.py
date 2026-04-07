@@ -33,7 +33,7 @@ VAGUE_TYPES = {
     "colloquial_area",
     "political",
 }
-MODEL = "claude-sonnet-4.6"
+MODEL = settings.CLAUDE_MODEL
 # In-memory geocoding cache (process-level, resets on restart)
 _geocode_cache: dict[str, dict] = {}
 _CACHE_MAX = 500

@@ -11,8 +11,9 @@ from app.models.disaster_event import DisasterEvent
 from app.models.disaster_report import DisasterReport
 from app.schemas.chat import ChatRequest
 from app.services import llm_service
-from app.services.dedup_service import find_candidate_events, is_duplicate
+from app.services.dedup_service import find_and_score_candidates
 from app.services.geocoding_service import geocode_address
+from app.services.llm_service import merge_event_descriptions, reextract_numbers_from_description
 from geoalchemy2.functions import ST_SetSRID, ST_MakePoint
 
 router = APIRouter()
@@ -62,16 +63,199 @@ def _format_candidates_hint(candidates: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _build_candidates_selection_event(candidates: list[dict]) -> dict:
+    """將候選事件清單打包為 candidates_selection SSE 事件，供前端渲染卡片。"""
+    return {
+        "type": "candidates_selection",
+        "candidates": [
+            {
+                "event_id": c["event_id"],
+                "title": c["title"],
+                "description": c["description"],
+                "location_text": c["location_text"],
+                "report_count": c["report_count"],
+                "distance_m": c["distance_m"],
+                "score": c["score"],
+            }
+            for c in candidates
+        ],
+    }
+
+
+def _format_dedup_candidates_hint(candidates: list[dict]) -> str:
+    """將相似事件候選清單格式化為供 LLM 詢問使用者的提示文字。"""
+    lines = [
+        "系統偵測到附近已有相似的災情事件，請向使用者列出以下選項，讓使用者選擇要合併到哪個既有事件或建立新事件："
+    ]
+    for i, c in enumerate(candidates, 1):
+        lines.append(
+            f"{i}. 「{c['title']}」— {c['description'][:50] if c.get('description') else '無描述'}"
+            f"（地點：{c['location_text']}，目前 {c['report_count']} 筆通報，"
+            f"距離約 {c['distance_m']} 公尺，相似度 {c['score']:.0%}）"
+            f"  [event_id: {c['event_id']}]"
+        )
+    lines.append(f"{len(candidates) + 1}. 建立全新事件（此通報與上述事件無關）")
+    lines.append("")
+    lines.append(
+        "請以自然語言列出選項讓使用者選擇。使用者選擇後，"
+        "再次呼叫 submit_disaster_report 並設定 merge_event_id 為對應事件的 UUID，"
+        "或填入 'new' 建立新事件。"
+    )
+    return "\n".join(lines)
+
+
+async def _merge_into_event(
+    target_event: DisasterEvent,
+    tool_data: dict,
+    raw_message: str,
+    db: Session,
+    coords: dict | None,
+) -> dict:
+    """將新通報合併到指定的既有事件。"""
+    geocoded_address = coords.get("display_name") if coords else None
+    latitude = coords["latitude"] if coords else 23.5
+    longitude = coords["longitude"] if coords else 121.0
+    point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+
+    target_event.report_count += 1
+
+    # 合併描述：用 LLM 整合兩段描述，保留完整脈絡
+    new_description = tool_data.get("description", "").strip()
+    if new_description:
+        try:
+            target_event.description = await merge_event_descriptions(
+                target_event.description or "", new_description
+            )
+        except Exception:
+            target_event.description = (
+                f"{target_event.description}；{new_description}"
+                if target_event.description
+                else new_description
+            )
+
+    # 從合併後的描述重新萃取數字，讓 LLM 從完整脈絡判斷累計傷亡
+    # 例如：「又有3人」→ 累加；「同3人」→ 不重複計算
+    try:
+        extracted = await reextract_numbers_from_description(target_event.description or "")
+    except Exception:
+        extracted = {}
+
+    if extracted:
+        if "casualties" in extracted:
+            target_event.casualties = extracted["casualties"]
+        if "injured" in extracted:
+            target_event.injured = extracted["injured"]
+        if "trapped" in extracted:
+            target_event.trapped = extracted["trapped"]
+        if "severity" in extracted:
+            target_event.severity = max(target_event.severity, extracted["severity"])
+        else:
+            target_event.severity = max(target_event.severity, tool_data["severity"])
+    else:
+        # fallback：直接累加各項傷亡人數
+        target_event.casualties += tool_data.get("casualties", 0)
+        target_event.injured += tool_data.get("injured", 0)
+        target_event.trapped += tool_data.get("trapped", 0)
+        target_event.severity = max(target_event.severity, tool_data["severity"])
+
+    target_event.updated_at = datetime.now(timezone.utc)
+
+    report = DisasterReport(
+        reporter_name=tool_data.get("reporter_name"),
+        reporter_phone=tool_data.get("reporter_phone"),
+        raw_message=raw_message,
+        extracted_data=tool_data,
+        location=point,
+        location_text=tool_data["location_text"],
+        event_id=target_event.id,
+    )
+    db.add(report)
+    db.commit()
+    return {
+        "status": "merged",
+        "event_id": str(target_event.id),
+        "message": f"此通報已合併至現有事件「{target_event.title}」（第 {target_event.report_count} 筆通報）",
+        "geocoded_address": geocoded_address,
+    }
+
+
+def _create_new_event(
+    tool_data: dict,
+    raw_message: str,
+    db: Session,
+    coords: dict | None,
+    occurred_at: datetime,
+) -> dict:
+    """建立全新的災情事件。"""
+    location_approximate = coords is None
+    geocoded_address = coords.get("display_name") if coords else None
+    latitude = coords["latitude"] if coords else 23.5
+    longitude = coords["longitude"] if coords else 121.0
+    point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+
+    disaster_type_names = {
+        "trapped": "人員受困",
+        "road_collapse": "路段崩塌",
+        "flooding": "淹水",
+        "landslide": "土石流",
+        "small_landslide": "小型土石流",
+        "building_damage": "建物受損",
+        "utility_damage": "管線/電力受損",
+        "fire": "火警",
+        "other": "災情",
+    }
+    type_name = disaster_type_names.get(
+        tool_data["disaster_type"], tool_data["disaster_type"]
+    )
+    title = f"{tool_data['location_text']}{type_name}"
+
+    event = DisasterEvent(
+        title=title,
+        disaster_type=tool_data["disaster_type"],
+        severity=tool_data["severity"],
+        description=tool_data["description"],
+        location_text=tool_data["location_text"],
+        location=point,
+        occurred_at=occurred_at,
+        casualties=tool_data.get("casualties", 0),
+        injured=tool_data.get("injured", 0),
+        trapped=tool_data.get("trapped", 0),
+        location_approximate=location_approximate,
+    )
+    db.add(event)
+    db.flush()
+
+    report = DisasterReport(
+        reporter_name=tool_data.get("reporter_name"),
+        reporter_phone=tool_data.get("reporter_phone"),
+        raw_message=raw_message,
+        extracted_data=tool_data,
+        location=point,
+        location_text=tool_data["location_text"],
+        event_id=event.id,
+    )
+    db.add(report)
+    db.commit()
+    return {
+        "status": "created",
+        "event_id": str(event.id),
+        "message": f"已建立新的災情事件「{title}」",
+        "geocoded_address": geocoded_address,
+    }
+
+
 async def _process_tool_use(
     tool_data: dict,
     raw_message: str,
     db: Session,
     coords: dict | None,
 ) -> dict:
-    """Process the submit_disaster_report tool call: dedup, save.
+    """Process the submit_disaster_report tool call.
 
-    coords: pre-geocoded result from geocode_address(), or None if geocoding failed.
-    When coords is None the event is created with location_approximate=True.
+    Two paths:
+    - Path A (no merge_event_id): Run dedup scoring. If candidates found, return
+      needs_user_choice with candidate list. Otherwise create new event.
+    - Path B (merge_event_id present): Merge into specified event or create new.
     """
     location_approximate = coords is None
     if coords:
@@ -89,111 +273,65 @@ async def _process_tool_use(
         try:
             occurred_at = datetime.fromisoformat(occurred_at_str)
             if occurred_at.tzinfo is None:
-                # LLM 以台灣時間為基準輸出，但不含時區資訊，補上 Asia/Taipei
                 occurred_at = occurred_at.replace(tzinfo=ZoneInfo("Asia/Taipei"))
         except ValueError:
             occurred_at = datetime.now(timezone.utc)
     else:
         occurred_at = datetime.now(timezone.utc)
 
-    # Deduplication
-    candidates = find_candidate_events(
+    merge_event_id = tool_data.get("merge_event_id")
+
+    # ── Path B: 使用者已選擇（帶 merge_event_id） ──
+    if merge_event_id is not None:
+        if merge_event_id == "new":
+            return _create_new_event(tool_data, raw_message, db, coords, occurred_at)
+
+        # 驗證目標事件存在且 active
+        target_event = db.get(DisasterEvent, merge_event_id)
+        if target_event is None:
+            return {
+                "status": "error",
+                "message": f"找不到事件 {merge_event_id}，該事件可能不存在。",
+            }
+        if target_event.status != "active":
+            return {
+                "status": "error",
+                "message": f"事件「{target_event.title}」已結案，不可合併新通報。",
+            }
+        return await _merge_into_event(target_event, tool_data, raw_message, db, coords)
+
+    # ── Path A: 首次呼叫（無 merge_event_id）── 執行去重評分
+    scored_candidates = await find_and_score_candidates(
         db,
         disaster_type=tool_data["disaster_type"],
+        description=tool_data["description"],
         latitude=latitude,
         longitude=longitude,
+        occurred_at=occurred_at,
     )
 
-    matched_event = None
-    for candidate in candidates:
-        if await is_duplicate(
-            tool_data["description"],
-            latitude,
-            longitude,
-            occurred_at,
-            tool_data["disaster_type"],
-            candidate,
-        ):
-            matched_event = candidate
-            break
-
-    point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-
-    # Create report
-    report = DisasterReport(
-        reporter_name=tool_data.get("reporter_name"),
-        reporter_phone=tool_data.get("reporter_phone"),
-        raw_message=raw_message,
-        extracted_data=tool_data,
-        location=point,
-        location_text=tool_data["location_text"],
-    )
-
-    if matched_event:
-        # Update existing event
-        matched_event.report_count += 1
-        matched_event.severity = max(matched_event.severity, tool_data["severity"])
-        matched_event.casualties = max(
-            matched_event.casualties, tool_data.get("casualties", 0)
-        )
-        matched_event.injured = max(
-            matched_event.injured, tool_data.get("injured", 0)
-        )
-        matched_event.trapped = max(
-            matched_event.trapped, tool_data.get("trapped", 0)
-        )
-        matched_event.updated_at = datetime.now(timezone.utc)
-        report.event_id = matched_event.id
-        db.add(report)
-        db.commit()
+    if scored_candidates:
+        # 有候選 → 回傳 needs_user_choice 讓 Claude 列出選項
+        candidates_info = [
+            {
+                "event_id": str(c["event"].id),
+                "title": c["event"].title,
+                "description": c["event"].description or "",
+                "location_text": c["event"].location_text,
+                "report_count": c["event"].report_count,
+                "distance_m": c["distance_m"],
+                "score": c["score"],
+            }
+            for c in scored_candidates
+        ]
         return {
-            "status": "merged",
-            "event_id": str(matched_event.id),
-            "message": f"此通報已合併至現有事件「{matched_event.title}」（第 {matched_event.report_count} 筆通報）",
+            "status": "needs_user_choice",
+            "candidates": candidates_info,
             "geocoded_address": geocoded_address,
         }
-    else:
-        # Create new event
-        disaster_type_names = {
-            "trapped": "人員受困",
-            "road_collapse": "路段崩塌",
-            "flooding": "淹水",
-            "landslide": "土石流",
-            "building_damage": "建物受損",
-            "utility_damage": "管線/電力受損",
-            "fire": "火警",
-            "other": "災情",
-        }
-        type_name = disaster_type_names.get(
-            tool_data["disaster_type"], tool_data["disaster_type"]
-        )
-        title = f"{tool_data['location_text']}{type_name}"
 
-        event = DisasterEvent(
-            title=title,
-            disaster_type=tool_data["disaster_type"],
-            severity=tool_data["severity"],
-            description=tool_data["description"],
-            location_text=tool_data["location_text"],
-            location=point,
-            occurred_at=occurred_at,
-            casualties=tool_data.get("casualties", 0),
-            injured=tool_data.get("injured", 0),
-            trapped=tool_data.get("trapped", 0),
-            location_approximate=location_approximate,
-        )
-        db.add(event)
-        db.flush()
-
-        report.event_id = event.id
-        db.add(report)
-        db.commit()
-        return {
-            "status": "created",
-            "event_id": str(event.id),
-            "message": f"已建立新的災情事件「{title}」",
-            "geocoded_address": geocoded_address,
-        }
+    # 無候選 → 直接建立新事件
+    return _create_new_event(tool_data, raw_message, db, coords, occurred_at)
 
 
 @router.post("/chat")
@@ -210,6 +348,32 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     async def event_generator():
         def _sse(data: dict) -> dict:
             return {"event": "message", "data": json.dumps(data, ensure_ascii=False)}
+
+        async def _dedup_continuation(result: dict, tool_data: dict, tool_use_id: str, ctx_msgs: list):
+            """去重候選找到後的完整流程：發 candidates_selection + 啟動 dedup continuation。
+            在地址消歧義或精確度追問的 continuation 路徑中，發現相似事件時呼叫此 helper。
+            """
+            yield _sse(_build_candidates_selection_event(result["candidates"]))
+            dedup_hint = _format_dedup_candidates_hint(result["candidates"])
+            dedup_msgs = ctx_msgs + [
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": tool_use_id,
+                     "name": "submit_disaster_report", "input": tool_data}
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": tool_use_id, "content": dedup_hint}
+                ]},
+            ]
+            async for dc in llm_service.stream_chat(dedup_msgs):
+                if dc["type"] == "text":
+                    yield _sse(dc)
+                elif dc["type"] == "tool_use":
+                    dc_coords = await geocode_address(dc["data"]["location_text"])
+                    dc_result = await _process_tool_use(dc["data"], raw_message, db, dc_coords)
+                    yield _sse({"type": "report_submitted", **dc_result})
+                    break
+                elif dc["type"] == "done":
+                    yield _sse({"type": "done"})
 
         try:
             collected_text = ""
@@ -252,7 +416,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                     )
 
                     if need_disambiguation:
-                        # 多個候選 → 透過 tool_result 讓 Claude 列出選項請使用者確認
+                        # 多個候選地點 → 透過 tool_result 讓 Claude 列出選項請使用者確認
                         assistant_content = []
                         if collected_text:
                             assistant_content.append({"type": "text", "text": collected_text})
@@ -279,7 +443,14 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             elif cont_chunk["type"] == "tool_use":
                                 cont_coords = await geocode_address(cont_chunk["data"]["location_text"])
                                 result = await _process_tool_use(cont_chunk["data"], raw_message, db, cont_coords)
-                                yield _sse({"type": "report_submitted", **result})
+                                if result["status"] == "needs_user_choice":
+                                    async for evt in _dedup_continuation(
+                                        result, cont_chunk["data"], cont_chunk["tool_use_id"],
+                                        continuation_messages,
+                                    ):
+                                        yield evt
+                                else:
+                                    yield _sse({"type": "report_submitted", **result})
                                 break
                             elif cont_chunk["type"] == "done":
                                 yield _sse({"type": "done"})
@@ -318,18 +489,64 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             if cont_chunk["type"] == "text":
                                 yield _sse(cont_chunk)
                             elif cont_chunk["type"] == "tool_use":
-                                # Edge case：continuation 裡 Claude 又呼叫工具，強制接受
                                 cont_coords = await geocode_address(cont_chunk["data"]["location_text"])
                                 result = await _process_tool_use(cont_chunk["data"], raw_message, db, cont_coords)
-                                yield _sse({"type": "report_submitted", **result})
+                                if result["status"] == "needs_user_choice":
+                                    async for evt in _dedup_continuation(
+                                        result, cont_chunk["data"], cont_chunk["tool_use_id"],
+                                        continuation_messages,
+                                    ):
+                                        yield evt
+                                else:
+                                    yield _sse({"type": "report_submitted", **result})
                                 break
                             elif cont_chunk["type"] == "done":
                                 yield _sse({"type": "done"})
                     else:
-                        # Geocoding 成功、已在 continuation 中、或超過重試上限 → 建立事件
-                        # coords 為 None 時將以 location_approximate=True 建立
+                        # Geocoding 成功、已在 continuation 中、或超過重試上限 → 處理通報
                         result = await _process_tool_use(tool_data, raw_message, db, coords)
-                        yield _sse({"type": "report_submitted", **result})
+
+                        if result["status"] == "needs_user_choice" and not is_continuation:
+                            # 去重消歧義：有相似事件
+                            # 1. 先發送結構化 candidates_selection 事件，讓前端渲染卡片
+                            yield _sse(_build_candidates_selection_event(result["candidates"]))
+
+                            # 2. 讓 Claude 繼續以自然語言介紹選項（使用者點卡片後 Claude 收到選擇）
+                            assistant_content = []
+                            if collected_text:
+                                assistant_content.append({"type": "text", "text": collected_text})
+                            assistant_content.append({
+                                "type": "tool_use",
+                                "id": tool_use_id,
+                                "name": "submit_disaster_report",
+                                "input": tool_data,
+                            })
+                            dedup_hint = _format_dedup_candidates_hint(result["candidates"])
+                            continuation_messages = messages + [
+                                {"role": "assistant", "content": assistant_content},
+                                {"role": "user", "content": [{
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_use_id,
+                                    "content": dedup_hint,
+                                }]},
+                            ]
+                            collected_text = ""
+                            is_continuation = True
+                            async for cont_chunk in llm_service.stream_chat(continuation_messages):
+                                if cont_chunk["type"] == "text":
+                                    yield _sse(cont_chunk)
+                                elif cont_chunk["type"] == "tool_use":
+                                    # 使用者選擇後 Claude 再次呼叫工具（帶 merge_event_id）
+                                    cont_coords = await geocode_address(cont_chunk["data"]["location_text"])
+                                    cont_result = await _process_tool_use(
+                                        cont_chunk["data"], raw_message, db, cont_coords,
+                                    )
+                                    yield _sse({"type": "report_submitted", **cont_result})
+                                    break
+                                elif cont_chunk["type"] == "done":
+                                    yield _sse({"type": "done"})
+                        else:
+                            yield _sse({"type": "report_submitted", **result})
 
                 elif chunk["type"] == "done":
                     if not is_continuation:

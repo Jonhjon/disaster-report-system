@@ -69,6 +69,16 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface EventCandidate {
+  event_id: string;
+  title: string;
+  description: string;
+  location_text: string;
+  report_count: number;
+  distance_m: number;
+  score: number;
+}
+
 export interface EventUpdateData {
   title?: string;
   severity?: number;

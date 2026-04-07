@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import ChatMessage from "./ChatMessage";
 import ReportSummary from "./ReportSummary";
+import CandidateSelectionCard from "./CandidateSelectionCard";
 import { streamChat } from "../../services/api";
-import type { ChatMessage as ChatMessageType } from "../../types";
+import type { ChatMessage as ChatMessageType, EventCandidate } from "../../types";
 
 function ChatWindow() {
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
@@ -12,18 +13,19 @@ function ChatWindow() {
     string,
     unknown
   > | null>(null);
+  const [pendingCandidates, setPendingCandidates] = useState<EventCandidate[] | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, pendingCandidates]);
 
-  const handleSend = () => {
-    if (!input.trim() || isLoading) return;
+  const sendMessage = (userMessage: string) => {
+    if (!userMessage.trim() || isLoading) return;
 
-    const userMessage = input.trim();
     setInput("");
+    setPendingCandidates(null);
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
@@ -52,6 +54,7 @@ function ChatWindow() {
       // onReportSubmitted
       (data) => {
         setReportResult(data);
+        setPendingCandidates(null);
       },
       // onDone
       () => {
@@ -60,12 +63,30 @@ function ChatWindow() {
       // onError
       (error) => {
         setIsLoading(false);
+        setPendingCandidates(null);
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: `發生錯誤：${error}` },
         ]);
+      },
+      // onCandidatesSelection
+      (candidates) => {
+        setPendingCandidates(candidates);
       }
     );
+  };
+
+  const handleSend = () => {
+    sendMessage(input.trim());
+  };
+
+  const handleCandidateSelect = (eventId: string) => {
+    const choiceText =
+      eventId === "new"
+        ? "我選擇建立新事件"
+        : `我選擇合併至事件 ${eventId}`;
+    setPendingCandidates(null);
+    sendMessage(choiceText);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -79,7 +100,7 @@ function ChatWindow() {
     <div className="flex h-full flex-col rounded-lg border bg-white">
       {/* Messages area */}
       <div className="flex-1 overflow-auto p-4">
-        {messages.length === 0 && (
+        {messages.length === 0 && !pendingCandidates && (
           <div className="flex h-full items-center justify-center text-gray-400">
             <div className="text-center">
               <p className="mb-2 text-4xl">🆘</p>
@@ -91,6 +112,12 @@ function ChatWindow() {
         {messages.map((msg, i) => (
           <ChatMessage key={i} message={msg} />
         ))}
+        {pendingCandidates && (
+          <CandidateSelectionCard
+            candidates={pendingCandidates}
+            onSelect={handleCandidateSelect}
+          />
+        )}
         {reportResult && <ReportSummary result={reportResult} />}
         <div ref={messagesEndRef} />
       </div>

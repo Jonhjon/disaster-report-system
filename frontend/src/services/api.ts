@@ -5,6 +5,7 @@ import type {
   EventMapItem,
   EventUpdateData,
   ChatMessage,
+  EventCandidate,
 } from "../types";
 
 const BASE_URL = "/api";
@@ -105,7 +106,8 @@ export function streamChat(
   onText: (text: string) => void,
   onReportSubmitted: (data: Record<string, unknown>) => void,
   onDone: () => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  onCandidatesSelection?: (candidates: EventCandidate[]) => void
 ): AbortController {
   const controller = new AbortController();
 
@@ -137,6 +139,8 @@ export function streamChat(
               const data = JSON.parse(line.slice(6));
               if (data.type === "text") {
                 onText(data.content);
+              } else if (data.type === "candidates_selection") {
+                onCandidatesSelection?.(data.candidates as EventCandidate[]);
               } else if (data.type === "report_submitted") {
                 onReportSubmitted(data);
               } else if (data.type === "done") {

@@ -57,7 +57,7 @@ def map_events(
     bounds: str | None = None,
     disaster_type: str | None = None,
     severity_min: int | None = None,
-    status: str = "active",
+    status: str = "reported",
     db: Session = Depends(get_db),
 ):
     items = event_service.get_map_events(

@@ -65,9 +65,9 @@ function EventEditForm({ event, onSave, onCancel }: EventEditFormProps) {
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value as EventStatus })}
           >
-            <option value="active">進行中</option>
-            <option value="monitoring">監控中</option>
-            <option value="resolved">已解除</option>
+            <option value="reported">通報中</option>
+            <option value="in_progress">處理中</option>
+            <option value="resolved">已結案</option>
           </select>
         </div>
       </div>

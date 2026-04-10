@@ -48,7 +48,7 @@ def find_candidate_events(
     candidates = (
         db.query(DisasterEvent)
         .filter(
-            DisasterEvent.status == "active",
+            DisasterEvent.status == "reported",
             DisasterEvent.disaster_type == disaster_type,
             DisasterEvent.updated_at >= cutoff,
             ST_DWithin(

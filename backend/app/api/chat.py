@@ -293,7 +293,7 @@ async def _process_tool_use(
                 "status": "error",
                 "message": f"找不到事件 {merge_event_id}，該事件可能不存在。",
             }
-        if target_event.status != "active":
+        if target_event.status != "reported":
             return {
                 "status": "error",
                 "message": f"事件「{target_event.title}」已結案，不可合併新通報。",

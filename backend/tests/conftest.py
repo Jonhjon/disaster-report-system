@@ -38,7 +38,7 @@ def fake_event(event_id):
         casualties=0,
         injured=2,
         trapped=0,
-        status="active",
+        status="reported",
         report_count=1,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),

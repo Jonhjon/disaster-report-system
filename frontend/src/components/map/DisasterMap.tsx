@@ -45,7 +45,7 @@ function DisasterMap() {
     disaster_type?: DisasterType;
     severity_min?: number;
     status: string;
-  }>({ status: "active" });
+  }>({ status: "reported" });
 
   return (
     <div className="flex h-full flex-col">

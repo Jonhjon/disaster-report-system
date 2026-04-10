@@ -41,7 +41,7 @@ export type DisasterType =
   | "fire"
   | "other";
 
-export type EventStatus = "active" | "monitoring" | "resolved";
+export type EventStatus = "reported" | "in_progress" | "resolved";
 
 export interface EventListResponse {
   items: DisasterEvent[];
@@ -102,9 +102,9 @@ export const DISASTER_TYPE_LABELS: Record<DisasterType, string> = {
 };
 
 export const STATUS_LABELS: Record<EventStatus, string> = {
-  active: "進行中",
-  monitoring: "監控中",
-  resolved: "已解除",
+  reported: "通報中",
+  in_progress: "處理中",
+  resolved: "已結案",
 };
 
 export const SEVERITY_LABELS: Record<number, string> = {

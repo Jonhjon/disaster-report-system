@@ -26,7 +26,7 @@ class DisasterEvent(Base):
     casualties: Mapped[int] = mapped_column(Integer, default=0)
     injured: Mapped[int] = mapped_column(Integer, default=0)
     trapped: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(20), default="active")
+    status: Mapped[str] = mapped_column(String(20), default="reported")
     report_count: Mapped[int] = mapped_column(Integer, default=1)
     location_approximate: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -43,7 +43,7 @@ class DisasterEvent(Base):
     __table_args__ = (
         CheckConstraint("severity >= 1 AND severity <= 5", name="ck_severity_range"),
         CheckConstraint(
-            "status IN ('active', 'monitoring', 'resolved')", name="ck_status_values"
+            "status IN ('reported', 'in_progress', 'resolved')", name="ck_status_values"
         ),
         Index("idx_events_location", "location", postgresql_using="gist"),
         Index("idx_events_disaster_type", "disaster_type"),

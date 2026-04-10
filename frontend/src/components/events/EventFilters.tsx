@@ -52,9 +52,9 @@ function EventFilters({ filters, onChange }: EventFiltersProps) {
           onChange={(e) => update("status", e.target.value)}
         >
           <option value="">全部狀態</option>
-          <option value="active">進行中</option>
-          <option value="monitoring">監控中</option>
-          <option value="resolved">已解除</option>
+          <option value="reported">通報中</option>
+          <option value="in_progress">處理中</option>
+          <option value="resolved">已結案</option>
         </select>
 
         <select

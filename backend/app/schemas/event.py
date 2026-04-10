@@ -16,7 +16,7 @@ class EventBase(BaseModel):
     casualties: int = 0
     injured: int = 0
     trapped: int = 0
-    status: str = "active"
+    status: str = "reported"
 
 
 class EventResponse(EventBase):
@@ -41,8 +41,8 @@ class EventUpdate(BaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str | None) -> str | None:
-        if v is not None and v not in {"active", "monitoring", "resolved"}:
-            raise ValueError("status must be one of: active, monitoring, resolved")
+        if v is not None and v not in {"reported", "in_progress", "resolved"}:
+            raise ValueError("status must be one of: reported, in_progress, resolved")
         return v
 
 

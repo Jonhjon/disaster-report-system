@@ -89,12 +89,11 @@ async def test_reextract_ignores_invalid_severity():
     assert "severity" not in result   # 7 超出範圍，不採用
 
 
-# ── _process_tool_use 合併分支整合測試 ────────────────────────────────────────
+# ── _process_tool_use 合併分支整合測試（Path B: merge_event_id）──────────────
 
 @pytest.mark.asyncio
-async def test_merge_branch_updates_fields_from_reextract(mock_db):
-    """描述發生變化 → reextract 被呼叫，injured 更新為描述中的值"""
-    from unittest.mock import patch, AsyncMock, MagicMock
+async def test_merge_branch_updates_fields_via_merge_event_id(mock_db):
+    """使用 merge_event_id 合併時，injured 應以 max() 更新"""
     from app.api.chat import _process_tool_use
 
     mock_event = MagicMock()
@@ -105,74 +104,64 @@ async def test_merge_branch_updates_fields_from_reextract(mock_db):
     mock_event.casualties = 0
     mock_event.injured = 5
     mock_event.trapped = 0
+    mock_event.status = "reported"
     mock_event.description = "中山路7-11發生火災，5人受傷。"
+
+    mock_db.get.return_value = mock_event
 
     tool_data = {
         "disaster_type": "fire",
         "description": "中山路便利商店火災，確認6人受傷，均已送醫。",
         "location_text": "台北市中山路",
         "severity": 3,
-        "latitude": 25.05,
-        "longitude": 121.53,
         "casualties": 0,
         "injured": 6,
         "trapped": 0,
+        "merge_event_id": str(mock_event.id),
     }
+    coords = {"display_name": "台北市中山路", "latitude": 25.05, "longitude": 121.53}
 
-    with (
-        patch("app.api.chat.geocode_address", new_callable=AsyncMock,
-              return_value={"display_name": "台北市中山路", "latitude": 25.05, "longitude": 121.53}),
-        patch("app.api.chat.find_candidate_events", return_value=[mock_event]),
-        patch("app.api.chat.is_duplicate", new_callable=AsyncMock, return_value=True),
-        patch("app.api.chat.merge_event_descriptions", new_callable=AsyncMock,
-              return_value="中山路7-11發生火災，確認6人受傷均已送醫。"),
-        patch("app.api.chat.reextract_numbers_from_description", new_callable=AsyncMock,
-              return_value={"casualties": 0, "injured": 6, "trapped": 0, "severity": 3}) as mock_reextract,
-    ):
-        result = await _process_tool_use(tool_data, "通報訊息", mock_db)
+    result = await _process_tool_use(tool_data, "通報訊息", mock_db, coords)
 
     assert result["status"] == "merged"
-    assert mock_event.injured == 6      # 從 5 更新為 6
-    mock_reextract.assert_called_once()
+    assert mock_event.injured == 6      # max(5, 6) = 6
+    assert mock_event.report_count == 2
 
 
 @pytest.mark.asyncio
-async def test_merge_branch_skips_reextract_when_description_unchanged(mock_db):
-    """描述未變化（短路情況）→ reextract 不被呼叫"""
+async def test_merge_branch_keeps_higher_existing_values(mock_db):
+    """合併時既有欄位較大 → 保留既有值（max 語意）"""
     from app.api.chat import _process_tool_use
 
-    same_desc = "中山路7-11發生火災，5人受傷。"
     mock_event = MagicMock()
     mock_event.id = __import__("uuid").uuid4()
     mock_event.title = "中山路火災"
     mock_event.report_count = 1
-    mock_event.severity = 3
-    mock_event.casualties = 0
+    mock_event.severity = 4
+    mock_event.casualties = 2
     mock_event.injured = 5
-    mock_event.trapped = 0
-    mock_event.description = same_desc
+    mock_event.trapped = 3
+    mock_event.status = "reported"
+    mock_event.description = "中山路7-11發生火災，5人受傷。"
+
+    mock_db.get.return_value = mock_event
 
     tool_data = {
         "disaster_type": "fire",
-        "description": same_desc,
+        "description": "中山路7-11發生火災，5人受傷。",
         "location_text": "台北市中山路",
         "severity": 3,
-        "latitude": 25.05,
-        "longitude": 121.53,
         "casualties": 0,
         "injured": 5,
         "trapped": 0,
+        "merge_event_id": str(mock_event.id),
     }
+    coords = {"display_name": "台北市中山路", "latitude": 25.05, "longitude": 121.53}
 
-    with (
-        patch("app.api.chat.geocode_address", new_callable=AsyncMock,
-              return_value={"display_name": "台北市中山路", "latitude": 25.05, "longitude": 121.53}),
-        patch("app.api.chat.find_candidate_events", return_value=[mock_event]),
-        patch("app.api.chat.is_duplicate", new_callable=AsyncMock, return_value=True),
-        patch("app.api.chat.merge_event_descriptions", new_callable=AsyncMock,
-              return_value=same_desc),   # 描述未變化（短路）
-        patch("app.api.chat.reextract_numbers_from_description", new_callable=AsyncMock) as mock_reextract,
-    ):
-        await _process_tool_use(tool_data, "通報訊息", mock_db)
+    result = await _process_tool_use(tool_data, "通報訊息", mock_db, coords)
 
-    mock_reextract.assert_not_called()  # 短路情況不呼叫
+    assert result["status"] == "merged"
+    assert mock_event.severity == 4     # max(4, 3) = 4
+    assert mock_event.casualties == 2   # max(2, 0) = 2
+    assert mock_event.injured == 5      # max(5, 5) = 5
+    assert mock_event.trapped == 3      # max(3, 0) = 3

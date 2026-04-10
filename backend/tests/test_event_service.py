@@ -92,7 +92,7 @@ def test_update_event_partial_status_only():
         id = event_id
         title = "Original Title"
         severity = 2
-        status = "active"
+        status = "reported"
         description = None
         casualties = 0
         injured = 0
@@ -107,10 +107,10 @@ def test_update_event_partial_status_only():
 
     with patch("app.services.event_service.get_event_by_id") as mock_get_by_id:
         mock_get_by_id.return_value = MagicMock()
-        data = EventUpdate(status="monitoring")
+        data = EventUpdate(status="in_progress")
         update_event(mock_db, event_id, data)
 
     assert "status" in set_attrs
-    assert set_attrs["status"] == "monitoring"
+    assert set_attrs["status"] == "in_progress"
     assert "title" not in set_attrs
     assert "severity" not in set_attrs

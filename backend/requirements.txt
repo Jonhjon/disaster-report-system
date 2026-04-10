@@ -12,3 +12,6 @@ httpx==0.28.1
 sse-starlette==2.2.1
 tzdata>=2024.1
 jieba>=0.42.1
+python-jose[cryptography]==3.3.0
+bcrypt>=4.0.0
+python-multipart==0.0.9

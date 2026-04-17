@@ -117,8 +117,8 @@ def _strip_thinking(text: str, state: dict) -> str:
 
 
 def _get_client() -> anthropic.AsyncAnthropic:
-    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    # return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY, base_url="https://api.banana2556.com" )
+    # return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY, base_url="https://api.banana2556.com" )
 
 
 async def merge_event_descriptions(existing: str, new: str) -> str:

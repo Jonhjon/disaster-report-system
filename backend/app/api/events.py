@@ -17,6 +17,8 @@ from app.schemas.event import (
 from app.schemas.report import ReportListResponse, ReportResponse
 from app.services import event_service
 from app.services.geocoding_service import geocode_address
+from app.api.deps import get_current_user
+from app.models.user import User
 
 router = APIRouter()
 
@@ -79,7 +81,7 @@ def get_event(event_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.put("/events/{event_id}", response_model=EventResponse)
-def update_event(event_id: UUID, data: EventUpdate, db: Session = Depends(get_db)):
+def update_event(event_id: UUID, data: EventUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     event = event_service.update_event(db, event_id, data)
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -91,6 +93,7 @@ async def update_event_location(
     event_id: UUID,
     body: EventLocationUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     coords = await geocode_address(body.location_text)
     if not coords:
@@ -102,7 +105,7 @@ async def update_event_location(
 
 
 @router.delete("/events/{event_id}", status_code=204)
-def delete_event(event_id: UUID, db: Session = Depends(get_db)):
+def delete_event(event_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     deleted = event_service.delete_event(db, event_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Event not found")

@@ -16,6 +16,9 @@ from fastapi.testclient import TestClient
 from app.database import get_db
 from app.main import app
 from app.schemas.event import EventResponse
+from app.api.deps import get_current_user
+from app.models.user import User
+from app.services.auth_service import create_access_token
 
 
 @pytest.fixture
@@ -51,8 +54,38 @@ def mock_db():
 
 
 @pytest.fixture
+def test_user():
+    """建立測試用的 User 物件"""
+    return User(
+        id=uuid4(),
+        username="testadmin",
+        hashed_password="fakehash",
+        display_name="測試管理員",
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+@pytest.fixture
 def client(mock_db):
     app.dependency_overrides[get_db] = lambda: mock_db
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_client(mock_db, test_user):
+    """帶認證的 TestClient，override get_current_user"""
+    app.dependency_overrides[get_db] = lambda: mock_db
+    app.dependency_overrides[get_current_user] = lambda: test_user
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_headers():
+    """產生有效的 JWT Authorization header"""
+    token = create_access_token({"sub": "testadmin"})
+    return {"Authorization": f"Bearer {token}"}

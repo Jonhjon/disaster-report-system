@@ -90,13 +90,13 @@ def test_get_event_not_found(client, mocker):
 # ---------------------------------------------------------------------------
 # Case 20: PUT /api/events/{id} 更新 severity=3 → 200 + severity=3
 # ---------------------------------------------------------------------------
-def test_update_event_severity(client, fake_event, event_id, mocker):
+def test_update_event_severity(auth_client, fake_event, event_id, mocker):
     mocker.patch(
         "app.api.events.event_service.update_event",
         return_value=fake_event,  # fake_event already has severity=3
     )
 
-    response = client.put(f"/api/events/{event_id}", json={"severity": 3})
+    response = auth_client.put(f"/api/events/{event_id}", json={"severity": 3})
 
     assert response.status_code == 200
     assert response.json()["severity"] == 3
@@ -105,8 +105,8 @@ def test_update_event_severity(client, fake_event, event_id, mocker):
 # ---------------------------------------------------------------------------
 # Case 21: PUT /api/events/{id} severity=99（非法）→ 422
 # ---------------------------------------------------------------------------
-def test_update_event_invalid_severity(client, event_id):
-    response = client.put(f"/api/events/{event_id}", json={"severity": 99})
+def test_update_event_invalid_severity(auth_client, event_id):
+    response = auth_client.put(f"/api/events/{event_id}", json={"severity": 99})
 
     assert response.status_code == 422
 

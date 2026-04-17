@@ -2,12 +2,13 @@
 
 ## 概要
 使用 PostgreSQL 16 + PostGIS 3，透過 SQLAlchemy 2.0 + GeoAlchemy2 操作。
+資料庫遷移使用 Alembic，目前版本：007（含 users 表）。
 
 ---
 
 ## 表 1: disaster_events (災情事件)
 
-一個「事件」代表一個獨立的災害（例如：某地震引發的某處坍方），可由多筆通報歸納而成。
+一個「事件」代表一個獨立的災害（例如：某處火災），可由多筆通報歸納而成。
 
 | 欄位 | 型別 | 約束 | 說明 |
 |------|------|------|------|
@@ -22,8 +23,9 @@
 | casualties | INTEGER | DEFAULT 0 | 死亡人數 |
 | injured | INTEGER | DEFAULT 0 | 受傷人數 |
 | trapped | INTEGER | DEFAULT 0 | 受困人數 |
-| status | VARCHAR(20) | DEFAULT 'active' | 狀態: active/monitoring/resolved |
+| status | VARCHAR(20) | DEFAULT 'reported' | 狀態: reported/in_progress/resolved |
 | report_count | INTEGER | DEFAULT 1 | 關聯通報數量 |
+| location_approximate | BOOLEAN | DEFAULT false | 位置是否不精確 |
 | created_at | TIMESTAMPTZ | DEFAULT NOW() | 建立時間 |
 | updated_at | TIMESTAMPTZ | DEFAULT NOW() | 最後更新時間 |
 
@@ -34,22 +36,29 @@
 - `idx_events_occurred_at` — B-tree on `occurred_at`
 - `idx_events_severity` — B-tree on `severity`
 
+### CHECK 約束
+- `ck_severity_range`: `severity >= 1 AND severity <= 5`
+- `ck_status_values`: `status IN ('reported', 'in_progress', 'resolved')`
+
 ### disaster_type 可選值
 | 值 | 中文 |
 |----|------|
-| earthquake | 地震 |
-| typhoon | 颱風 |
-| flood | 水災 |
-| landslide | 土石流/坍方 |
-| fire | 火災 |
+| trapped | 人員受困 |
+| road_collapse | 路段崩塌 |
+| flooding | 淹水 |
+| landslide | 土石流 |
+| small_landslide | 小型土石流 |
+| building_damage | 建物受損 |
+| utility_damage | 管線/電力受損 |
+| fire | 火警 |
 | other | 其他 |
 
 ### status 可選值
 | 值 | 中文 | 說明 |
 |----|------|------|
-| active | 進行中 | 災情正在發生或尚未處理 |
-| monitoring | 監控中 | 災情已受控，持續觀察 |
-| resolved | 已解除 | 災情已處理完畢 |
+| reported | 通報中 | 災情已通報，尚未處理 |
+| in_progress | 處理中 | 災情正在處理中 |
+| resolved | 已結案 | 災情已處理完畢 |
 
 ---
 
@@ -67,6 +76,7 @@
 | extracted_data | JSONB | NOT NULL | LLM 擷取的結構化資料 |
 | location | GEOMETRY(Point, 4326) | | 通報地點座標 |
 | location_text | VARCHAR(500) | | 通報地點文字 |
+| geocoded_address | VARCHAR(500) | | Geocoding 結果地址 |
 | created_at | TIMESTAMPTZ | DEFAULT NOW() | 通報時間 |
 
 ### 索引
@@ -74,23 +84,41 @@
 - `idx_reports_location` — GIST 空間索引 on `location`
 - `idx_reports_created_at` — B-tree on `created_at`
 
-### extracted_data JSONB 結構範例
-```json
-{
-  "disaster_type": "flood",
-  "description": "台北市中正區忠孝東路一段淹水約50公分",
-  "location_text": "台北市中正區忠孝東路一段",
-  "latitude": 25.0418,
-  "longitude": 121.5199,
-  "severity": 3,
-  "casualties": 0,
-  "injured": 2,
-  "trapped": 0,
-  "occurred_at": "2026-02-25T10:30:00+08:00",
-  "reporter_name": "王小明",
-  "reporter_phone": "0912345678"
-}
-```
+---
+
+## 表 3: users (管理員帳號)
+
+管理中心端登入用的帳號資料。
+
+| 欄位 | 型別 | 約束 | 說明 |
+|------|------|------|------|
+| id | UUID | PK, DEFAULT gen_random_uuid() | 主鍵 |
+| username | VARCHAR(50) | UNIQUE, NOT NULL | 帳號 |
+| hashed_password | VARCHAR(255) | NOT NULL | bcrypt 雜湊密碼 |
+| display_name | VARCHAR(100) | | 顯示名稱 |
+| is_active | BOOLEAN | DEFAULT true | 是否啟用 |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | 建立時間 |
+
+預設管理員帳號：`admin` / `admin123`（部署時應更改密碼）
+
+---
+
+## 表 4: llm_logs (LLM 呼叫日誌)
+
+記錄所有 Claude API 呼叫，用於監控和成本追蹤。
+
+| 欄位 | 型別 | 約束 | 說明 |
+|------|------|------|------|
+| id | UUID | PK, DEFAULT gen_random_uuid() | 主鍵 |
+| timestamp | TIMESTAMPTZ | | 呼叫時間 |
+| model | VARCHAR(100) | | 使用的模型名稱 |
+| latency_ms | INTEGER | | 回應延遲（毫秒） |
+| input_tokens | INTEGER | | 輸入 token 數 |
+| output_tokens | INTEGER | | 輸出 token 數 |
+| total_tokens | INTEGER | | 總 token 數 |
+| status | VARCHAR(20) | | 狀態 (success/error) |
+| prompt | TEXT | | 請求的 prompt |
+| output | TEXT | | AI 的回應 |
 
 ---
 
@@ -99,28 +127,21 @@
 ```
 disaster_events (1) ←──── (N) disaster_reports
    一個事件可以有多筆通報
+
+users — 獨立表，無外鍵關聯
+llm_logs — 獨立表，無外鍵關聯
 ```
 
 ---
 
-## 去重查詢範例 (PostGIS)
+## Alembic 遷移歷史
 
-查詢某座標半徑 20km 內、72 小時內、同類型的 active 事件：
-
-```sql
-SELECT *
-FROM disaster_events
-WHERE status = 'active'
-  AND disaster_type = :disaster_type
-  AND occurred_at >= NOW() - INTERVAL '72 hours'
-  AND ST_DWithin(
-    location::geography,
-    ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
-    :radius_meters  -- 例如 20000 (20km)
-  )
-ORDER BY ST_Distance(
-  location::geography,
-  ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography
-)
-LIMIT 5;
-```
+| 版本 | 說明 |
+|------|------|
+| 001 | 初始：建立 disaster_events、disaster_reports 表 |
+| 002 | 建立 llm_logs 表 |
+| 003 | 新增 disaster_reports.geocoded_address 欄位 |
+| 004 | 新增 disaster_events.location_approximate 欄位 |
+| 005 | 重新命名狀態值：active → open, monitoring → in_progress |
+| 006 | 重新命名狀態值：open → reported |
+| 007 | 建立 users 表，插入預設管理員帳號 |

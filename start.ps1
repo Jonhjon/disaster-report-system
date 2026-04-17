@@ -1,9 +1,10 @@
-﻿# 智慧災害通報系統 - 一鍵啟動腳本
+# 智慧災害通報系統 - 一鍵啟動腳本
 # 重開機後，以系統管理員身分執行此腳本
 
 $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BackendDir = Join-Path $ProjectDir 'backend'
-$FrontendDir = Join-Path $ProjectDir 'frontend'
+$PublicDir = Join-Path $ProjectDir 'frontend-public'
+$AdminDir = Join-Path $ProjectDir 'frontend-admin'
 $NodePath = 'C:\Program Files\nodejs'
 $DockerPath = 'C:\Program Files\Docker\Docker\resources\bin'
 
@@ -29,12 +30,12 @@ if (Test-Path $EnvFile) {
 $dockerProcess = Get-Process 'Docker Desktop' -ErrorAction SilentlyContinue
 if (-not $dockerProcess) {
     Write-Host ''
-    Write-Host '[1/4] 啟動 Docker Desktop...' -ForegroundColor Yellow
+    Write-Host '[1/5] 啟動 Docker Desktop...' -ForegroundColor Yellow
     Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
     Write-Host '      等待 Docker 啟動（約 30 秒）...'
     Start-Sleep -Seconds 30
 } else {
-    Write-Host '[1/4] Docker Desktop 已在執行中' -ForegroundColor Green
+    Write-Host '[1/5] Docker Desktop 已在執行中' -ForegroundColor Green
 }
 
 # 等待 Docker daemon
@@ -55,7 +56,7 @@ Write-Host '      Docker 就緒！' -ForegroundColor Green
 
 # 3. 啟動 PostgreSQL + PostGIS
 Write-Host ''
-Write-Host '[2/4] 啟動資料庫 (PostgreSQL + PostGIS)...' -ForegroundColor Yellow
+Write-Host '[2/5] 啟動資料庫 (PostgreSQL + PostGIS)...' -ForegroundColor Yellow
 Set-Location $ProjectDir
 & "$DockerPath\docker.exe" compose up -d
 if ($LASTEXITCODE -ne 0) {
@@ -76,7 +77,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # 4. 執行 Alembic 遷移（建立資料表）
 Write-Host ''
-Write-Host '[3/4] 建立資料庫資料表...' -ForegroundColor Yellow
+Write-Host '[3/5] 建立資料庫資料表...' -ForegroundColor Yellow
 Set-Location $BackendDir
 $VenvPython = Join-Path $BackendDir 'venv\Scripts\python.exe'
 $VenvAlembic = Join-Path $BackendDir 'venv\Scripts\alembic.exe'
@@ -87,10 +88,10 @@ if ($LASTEXITCODE -ne 0) {
 
 # 5. 啟動後端（新視窗）
 Write-Host ''
-Write-Host '[4/4] 啟動後端與前端服務...' -ForegroundColor Yellow
+Write-Host '[4/5] 啟動後端服務...' -ForegroundColor Yellow
 
-# 先清除佔用 8000 port 的舊程序，避免殭屍程序問題
-Write-Host '      清除舊後端程序...' -ForegroundColor DarkGray
+# 先清除佔用 port 的舊程序
+Write-Host '      清除舊程序...' -ForegroundColor DarkGray
 Get-Process -Name "python" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 
@@ -99,25 +100,38 @@ $backendProc = Start-Process powershell -ArgumentList '-NoExit', '-Command', $ba
 
 Start-Sleep -Seconds 3
 
-# 6. 啟動前端（新視窗）
-$frontendScript = "Set-Location '" + $FrontendDir + "'; npm run dev"
-$frontendProc = Start-Process powershell -ArgumentList '-NoExit', '-Command', $frontendScript -PassThru
+# 6. 啟動民眾端前端（新視窗，port 5173）
+Write-Host ''
+Write-Host '[5/5] 啟動前端服務...' -ForegroundColor Yellow
+
+$publicScript = "Set-Location '" + $PublicDir + "'; npm run dev"
+$publicProc = Start-Process powershell -ArgumentList '-NoExit', '-Command', $publicScript -PassThru
+
+# 7. 啟動管理中心端前端（新視窗，port 5174）
+$adminScript = "Set-Location '" + $AdminDir + "'; npm run dev"
+$adminProc = Start-Process powershell -ArgumentList '-NoExit', '-Command', $adminScript -PassThru
 
 # 儲存視窗 PID 供 stop.ps1 使用
 $pidFile = Join-Path $ProjectDir '.running_pids'
-@{ BackendPID = $backendProc.Id; FrontendPID = $frontendProc.Id } | ConvertTo-Json | Set-Content $pidFile
+@{
+    BackendPID = $backendProc.Id
+    PublicPID  = $publicProc.Id
+    AdminPID   = $adminProc.Id
+} | ConvertTo-Json | Set-Content $pidFile
 
 Write-Host ''
 Write-Host '=== 系統啟動完成！===' -ForegroundColor Green
 Write-Host ''
 Write-Host '請稍候約 5 秒，然後在瀏覽器開啟：' -ForegroundColor White
-Write-Host '  前端：http://localhost:5173' -ForegroundColor Cyan
-Write-Host '  API 文件：http://localhost:8000/docs' -ForegroundColor Cyan
-Write-Host '  Log 監控：http://localhost:8000/static/monitor.html' -ForegroundColor Cyan
+Write-Host '  民眾端：    http://localhost:5173' -ForegroundColor Cyan
+Write-Host '  管理中心端：http://localhost:5174' -ForegroundColor Cyan
+Write-Host '  API 文件：  http://localhost:8000/docs' -ForegroundColor Cyan
+Write-Host ''
+Write-Host '管理中心預設帳號：admin / admin123' -ForegroundColor Yellow
 Write-Host ''
 
 Start-Sleep -Seconds 5
 Start-Process 'http://localhost:5173'
-Start-Process 'http://localhost:8000/static/monitor.html'
+Start-Process 'http://localhost:5174'
 
 Set-Location $ProjectDir

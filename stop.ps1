@@ -7,7 +7,7 @@ Write-Host '=== 智慧災害通報系統關閉中 ===' -ForegroundColor Cyan
 
 # 1. 停止後端（uvicorn）
 Write-Host ''
-Write-Host '[1/3] 停止後端服務...' -ForegroundColor Yellow
+Write-Host '[1/4] 停止後端服務...' -ForegroundColor Yellow
 $uvicornProcs = Get-Process -Name 'python' -ErrorAction SilentlyContinue |
     Where-Object {
         try {
@@ -22,9 +22,9 @@ if ($uvicornProcs) {
     Write-Host '      後端未在執行中（略過）' -ForegroundColor Gray
 }
 
-# 2. 停止前端（node / vite）
+# 2. 停止前端（民眾端 + 管理中心端）
 Write-Host ''
-Write-Host '[2/3] 停止前端服務...' -ForegroundColor Yellow
+Write-Host '[2/4] 停止前端服務...' -ForegroundColor Yellow
 $nodeProcs = Get-Process -Name 'node' -ErrorAction SilentlyContinue |
     Where-Object {
         try {
@@ -34,14 +34,14 @@ $nodeProcs = Get-Process -Name 'node' -ErrorAction SilentlyContinue |
     }
 if ($nodeProcs) {
     $nodeProcs | Stop-Process -Force
-    Write-Host '      前端已停止' -ForegroundColor Green
+    Write-Host "      已停止 $($nodeProcs.Count) 個前端程序" -ForegroundColor Green
 } else {
     Write-Host '      前端未在執行中（略過）' -ForegroundColor Gray
 }
 
 # 3. 停止 Docker 容器（PostgreSQL + PostGIS）
 Write-Host ''
-Write-Host '[3/3] 停止資料庫容器...' -ForegroundColor Yellow
+Write-Host '[3/4] 停止資料庫容器...' -ForegroundColor Yellow
 Set-Location $ProjectDir
 $dockerExe = "$DockerPath\docker.exe"
 if (Test-Path $dockerExe) {
@@ -54,14 +54,16 @@ if (Test-Path $dockerExe) {
 } else {
     Write-Host '      找不到 Docker，略過' -ForegroundColor Gray
 }
-# 4. 關閉後端/前端 PowerShell 視窗
+
+# 4. 關閉服務視窗
 $pidFile = Join-Path $ProjectDir '.running_pids'
 if (Test-Path $pidFile) {
     Write-Host ''
     Write-Host '[4/4] 關閉服務視窗...' -ForegroundColor Yellow
     $savedPids = Get-Content $pidFile | ConvertFrom-Json
-    Stop-Process -Id $savedPids.BackendPID  -Force -ErrorAction SilentlyContinue
-    Stop-Process -Id $savedPids.FrontendPID -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $savedPids.BackendPID -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $savedPids.PublicPID  -Force -ErrorAction SilentlyContinue
+    Stop-Process -Id $savedPids.AdminPID   -Force -ErrorAction SilentlyContinue
     Remove-Item $pidFile
     Write-Host '      服務視窗已關閉' -ForegroundColor Green
 }

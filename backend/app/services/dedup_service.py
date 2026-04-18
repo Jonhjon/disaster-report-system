@@ -2,7 +2,6 @@ import difflib
 from datetime import datetime, timedelta, timezone
 from math import atan2, cos, radians, sin, sqrt
 
-import anthropic
 import jieba
 from geoalchemy2.functions import ST_Distance, ST_DWithin, ST_SetSRID, ST_MakePoint
 from sqlalchemy import cast
@@ -11,6 +10,7 @@ from geoalchemy2 import Geography
 
 from app.config import settings
 from app.models.disaster_event import DisasterEvent
+from app.services.api_clients import get_anthropic_client
 
 # Dedup radius by disaster type (in meters)
 DEDUP_RADIUS = {
@@ -127,10 +127,7 @@ def _compute_dedup_score(
 
 async def llm_judge_duplicate(new_desc: str, candidate: DisasterEvent) -> bool:
     """Use Claude haiku to judge whether two reports describe the same disaster event."""
-    client = anthropic.AsyncAnthropic(
-        api_key=settings.ANTHROPIC_API_KEY,
-        base_url="https://api.banana2556.com",
-    )
+    client = get_anthropic_client()
     candidate_text = f"{candidate.title}：{candidate.description or ''}"
     prompt = (
         "以下兩則通報是否描述同一個災害事件？請只回答 YES 或 NO。\n\n"
@@ -139,8 +136,7 @@ async def llm_judge_duplicate(new_desc: str, candidate: DisasterEvent) -> bool:
     )
     try:
         message = await client.messages.create(
-            # model="claude-haiku-4-5-20251001",
-            model="claude-sonnet-4-6",
+            model=settings.DEDUP_MODEL,
             max_tokens=10,
             messages=[{"role": "user", "content": prompt}],
         )

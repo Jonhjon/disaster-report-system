@@ -1,4 +1,9 @@
-import type { ChatMessage, EventCandidate, EventMapItem } from "../types";
+import type {
+  ChatMessage,
+  ChatSessionResponse,
+  EventCandidate,
+  EventMapItem,
+} from "../types";
 
 const BASE_URL = "/api";
 
@@ -30,14 +35,18 @@ export function streamChat(
   onReportSubmitted: (data: Record<string, unknown>) => void,
   onDone: () => void,
   onError: (error: string) => void,
-  onCandidatesSelection?: (candidates: EventCandidate[]) => void
+  onCandidatesSelection?: (candidates: EventCandidate[]) => void,
+  sessionToken?: string
 ): AbortController {
   const controller = new AbortController();
+
+  const body: Record<string, unknown> = { message, history };
+  if (sessionToken) body.session_token = sessionToken;
 
   fetch(`${BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify(body),
     signal: controller.signal,
   })
     .then(async (response) => {
@@ -91,4 +100,19 @@ export function streamChat(
     });
 
   return controller;
+}
+
+export async function getChatSession(
+  token: string
+): Promise<ChatSessionResponse> {
+  const response = await fetch(`${BASE_URL}/chat/session/${token}`, {
+    headers: { "Content-Type": "application/json" },
+  });
+  if (response.status === 404) {
+    throw new Error("對話連結無效或已過期");
+  }
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
 }

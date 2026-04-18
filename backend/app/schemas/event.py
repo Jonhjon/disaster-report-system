@@ -25,6 +25,7 @@ class EventResponse(EventBase):
     location_approximate: bool = False
     created_at: datetime
     updated_at: datetime
+    completeness: dict = {}
 
     model_config = {"from_attributes": True}
 
@@ -41,8 +42,11 @@ class EventUpdate(BaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str | None) -> str | None:
-        if v is not None and v not in {"reported", "in_progress", "resolved"}:
-            raise ValueError("status must be one of: reported, in_progress, resolved")
+        allowed = {"pending_clarification", "reported", "in_progress", "resolved"}
+        if v is not None and v not in allowed:
+            raise ValueError(
+                "status must be one of: pending_clarification, reported, in_progress, resolved"
+            )
         return v
 
 

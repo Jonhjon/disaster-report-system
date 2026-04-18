@@ -52,6 +52,7 @@ function EventFilters({ filters, onChange }: EventFiltersProps) {
           onChange={(e) => update("status", e.target.value)}
         >
           <option value="">全部狀態</option>
+          <option value="pending_clarification">待補充</option>
           <option value="reported">通報中</option>
           <option value="in_progress">處理中</option>
           <option value="resolved">已結案</option>

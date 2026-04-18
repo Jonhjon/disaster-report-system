@@ -74,9 +74,9 @@ def test_find_candidate_events_fire_radius():
 async def test_llm_judge_duplicate_yes():
     candidate = _make_candidate()
 
-    with patch("app.services.dedup_service.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("app.services.dedup_service.get_anthropic_client") as mock_getter:
         mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
+        mock_getter.return_value = mock_client
 
         mock_message = MagicMock()
         mock_message.content = [MagicMock(text="YES")]
@@ -92,9 +92,9 @@ async def test_llm_judge_duplicate_yes():
 async def test_llm_judge_duplicate_no():
     candidate = _make_candidate()
 
-    with patch("app.services.dedup_service.anthropic.AsyncAnthropic") as mock_cls:
+    with patch("app.services.dedup_service.get_anthropic_client") as mock_getter:
         mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
+        mock_getter.return_value = mock_client
 
         mock_message = MagicMock()
         mock_message.content = [MagicMock(text="NO")]

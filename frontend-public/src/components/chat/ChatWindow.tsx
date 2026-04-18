@@ -5,8 +5,20 @@ import CandidateSelectionCard from "./CandidateSelectionCard";
 import { streamChat } from "../../services/api";
 import type { ChatMessage as ChatMessageType, EventCandidate } from "../../types";
 
-function ChatWindow() {
-  const [messages, setMessages] = useState<ChatMessageType[]>([]);
+interface ChatWindowProps {
+  initialMessages?: ChatMessageType[];
+  sessionToken?: string;
+  introText?: string;
+}
+
+function ChatWindow({
+  initialMessages,
+  sessionToken,
+  introText,
+}: ChatWindowProps = {}) {
+  const [messages, setMessages] = useState<ChatMessageType[]>(
+    initialMessages ?? []
+  );
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [reportResult, setReportResult] = useState<Record<
@@ -67,7 +79,8 @@ function ChatWindow() {
       },
       (candidates) => {
         setPendingCandidates(candidates);
-      }
+      },
+      sessionToken
     );
   };
 
@@ -101,6 +114,11 @@ function ChatWindow() {
               <p className="text-lg font-semibold">智慧災害通報助手</p>
               <p className="text-sm">請描述您要通報的災情，AI 助手會引導您完成通報</p>
             </div>
+          </div>
+        )}
+        {introText && messages.length > 0 && (
+          <div className="mx-2 mb-3 rounded-lg border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900">
+            📨 {introText}
           </div>
         )}
         {messages.map((msg, i) => (

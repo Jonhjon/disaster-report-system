@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
 from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy import TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,6 +29,7 @@ class DisasterEvent(Base):
     status: Mapped[str] = mapped_column(String(20), default="reported")
     report_count: Mapped[int] = mapped_column(Integer, default=1)
     location_approximate: Mapped[bool] = mapped_column(Boolean, default=False)
+    completeness: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -43,7 +44,8 @@ class DisasterEvent(Base):
     __table_args__ = (
         CheckConstraint("severity >= 1 AND severity <= 5", name="ck_severity_range"),
         CheckConstraint(
-            "status IN ('reported', 'in_progress', 'resolved')", name="ck_status_values"
+            "status IN ('pending_clarification', 'reported', 'in_progress', 'resolved')",
+            name="ck_status_values",
         ),
         Index("idx_events_location", "location", postgresql_using="gist"),
         Index("idx_events_disaster_type", "disaster_type"),

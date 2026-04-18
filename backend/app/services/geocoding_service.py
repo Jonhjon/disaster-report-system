@@ -5,6 +5,7 @@ import re
 import httpx
 
 from app.config import settings
+from app.services.api_clients import get_anthropic_client
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +76,8 @@ async def _extract_landmark_pattern(text: str) -> dict | None:
     api_key = settings.ANTHROPIC_API_KEY
     if not api_key:
         return None
-    import anthropic  # noqa: PLC0415
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = get_anthropic_client()
     prompt = (
         "你是地址解析器，專門識別「在某地標附近找某目標」的查詢模式。\n\n"
         "判斷規則：\n"
@@ -131,9 +131,7 @@ async def extract_structured_address(text: str) -> str:
     if not api_key:
         return text
 
-    import anthropic  # noqa: PLC0415
-
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = get_anthropic_client()
     try:
         message = await client.messages.create(
             # model="claude-haiku-4-5-20251001",
@@ -174,9 +172,7 @@ async def extract_address_components(text: str) -> dict:
     if not api_key:
         return {}
 
-    import anthropic  # noqa: PLC0415
-
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = get_anthropic_client()
     try:
         message = await client.messages.create(
             # model="claude-haiku-4-5-20251001",

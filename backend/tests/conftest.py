@@ -21,6 +21,16 @@ from app.models.user import User
 from app.services.auth_service import create_access_token
 
 
+@pytest.fixture(autouse=True)
+def _reset_anthropic_client():
+    """每個測試前後重置 Anthropic client singleton，避免 monkeypatch 失效或跨測試汙染。"""
+    from app.services.api_clients import reset_anthropic_client
+
+    reset_anthropic_client()
+    yield
+    reset_anthropic_client()
+
+
 @pytest.fixture
 def event_id():
     return uuid4()

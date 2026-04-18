@@ -6,8 +6,22 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.services.notification_service import (
+    NotificationService,
+    build_notification_service,
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+_notification_service_instance: NotificationService | None = None
+
+
+def get_notification_service() -> NotificationService:
+    """Lazy-init singleton notification service based on current settings."""
+    global _notification_service_instance
+    if _notification_service_instance is None:
+        _notification_service_instance = build_notification_service(settings)
+    return _notification_service_instance
 
 
 def get_current_user(

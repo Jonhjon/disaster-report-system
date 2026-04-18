@@ -1,3 +1,8 @@
+export interface Completeness {
+  score: number;
+  missing: string[];
+}
+
 export interface DisasterEvent {
   id: string;
   title: string;
@@ -14,6 +19,7 @@ export interface DisasterEvent {
   status: EventStatus;
   report_count: number;
   location_approximate: boolean;
+  completeness?: Completeness;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +29,9 @@ export interface DisasterReport {
   event_id: string | null;
   reporter_name: string | null;
   reporter_phone: string | null;
+  reporter_email?: string | null;
+  reporter_line_user_id?: string | null;
+  preferred_channel?: ClarificationChannel | null;
   raw_message: string;
   extracted_data: Record<string, unknown>;
   location_text: string | null;
@@ -41,7 +50,51 @@ export type DisasterType =
   | "fire"
   | "other";
 
-export type EventStatus = "reported" | "in_progress" | "resolved";
+export type EventStatus =
+  | "pending_clarification"
+  | "reported"
+  | "in_progress"
+  | "resolved";
+
+export type ClarificationChannel = "sms" | "line" | "email";
+
+export type ClarificationStatus =
+  | "pending"
+  | "sent"
+  | "delivered"
+  | "failed"
+  | "replied";
+
+export interface ClarificationRequest {
+  id: string;
+  event_id: string;
+  channel: ClarificationChannel;
+  recipient: string;
+  question: string;
+  message_body: string;
+  status: ClarificationStatus;
+  provider_message_id: string | null;
+  error_message: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  replied_at: string | null;
+  created_at: string;
+}
+
+export interface PendingQuestion {
+  id: string;
+  question: string;
+  asked_by: string;
+  asked_at: string;
+}
+
+export interface ChatSessionResponse {
+  session_token: string;
+  status: string;
+  messages: ChatMessage[];
+  pending_questions: PendingQuestion[];
+  event_id: string | null;
+}
 
 export interface EventListResponse {
   items: DisasterEvent[];
@@ -102,9 +155,33 @@ export const DISASTER_TYPE_LABELS: Record<DisasterType, string> = {
 };
 
 export const STATUS_LABELS: Record<EventStatus, string> = {
+  pending_clarification: "待補充",
   reported: "通報中",
   in_progress: "處理中",
   resolved: "已結案",
+};
+
+export const CLARIFICATION_CHANNEL_LABELS: Record<ClarificationChannel, string> = {
+  sms: "簡訊 (SMS)",
+  line: "LINE",
+  email: "Email",
+};
+
+export const CLARIFICATION_STATUS_LABELS: Record<ClarificationStatus, string> = {
+  pending: "待發送",
+  sent: "已發送",
+  delivered: "已送達",
+  failed: "發送失敗",
+  replied: "民眾已回覆",
+};
+
+export const MISSING_FIELD_LABELS: Record<string, string> = {
+  occurred_at: "發生時間",
+  casualties: "死亡人數",
+  injured: "受傷人數",
+  trapped: "受困人數",
+  location_text: "精確地點",
+  description: "詳細描述",
 };
 
 export const SEVERITY_LABELS: Record<number, string> = {

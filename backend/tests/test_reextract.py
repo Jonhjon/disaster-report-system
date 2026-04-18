@@ -13,7 +13,7 @@ async def test_reextract_returns_correct_numbers():
     mock_response = MagicMock()
     mock_response.content = [MagicMock(text='{"casualties":0,"injured":6,"trapped":2,"severity":3}')]
 
-    with patch("app.services.llm_service._get_client") as mock_get:
+    with patch("app.services.llm_service.get_anthropic_client") as mock_get:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
         mock_get.return_value = mock_client
@@ -34,7 +34,7 @@ async def test_reextract_handles_markdown_code_fence():
         text='```json\n{"casualties":null,"injured":3,"trapped":null,"severity":4}\n```'
     )]
 
-    with patch("app.services.llm_service._get_client") as mock_get:
+    with patch("app.services.llm_service.get_anthropic_client") as mock_get:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
         mock_get.return_value = mock_client
@@ -50,7 +50,7 @@ async def test_reextract_handles_markdown_code_fence():
 @pytest.mark.asyncio
 async def test_reextract_returns_empty_dict_on_llm_failure():
     """LLM 拋出例外 → 回傳 {} （呼叫端保留 max() 值）"""
-    with patch("app.services.llm_service._get_client") as mock_get:
+    with patch("app.services.llm_service.get_anthropic_client") as mock_get:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(side_effect=Exception("API error"))
         mock_get.return_value = mock_client
@@ -63,7 +63,7 @@ async def test_reextract_returns_empty_dict_on_llm_failure():
 @pytest.mark.asyncio
 async def test_reextract_short_circuits_on_empty_description():
     """空描述 → 直接回傳 {}，不呼叫 LLM"""
-    with patch("app.services.llm_service._get_client") as mock_get:
+    with patch("app.services.llm_service.get_anthropic_client") as mock_get:
         result = await reextract_numbers_from_description("")
 
     mock_get.assert_not_called()
@@ -78,7 +78,7 @@ async def test_reextract_ignores_invalid_severity():
         text='{"casualties":null,"injured":2,"trapped":null,"severity":7}'
     )]
 
-    with patch("app.services.llm_service._get_client") as mock_get:
+    with patch("app.services.llm_service.get_anthropic_client") as mock_get:
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=mock_response)
         mock_get.return_value = mock_client

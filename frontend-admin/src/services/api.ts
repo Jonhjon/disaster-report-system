@@ -1,4 +1,7 @@
 import type {
+  ChatSessionResponse,
+  ClarificationChannel,
+  ClarificationRequest,
   DisasterEvent,
   DisasterReport,
   EventListResponse,
@@ -120,4 +123,32 @@ export async function getMapEvents(params: {
 
 export async function getLLMLogs(): Promise<Record<string, unknown>[]> {
   return fetchJSON("/llm-logs");
+}
+
+export interface ClarificationCreatePayload {
+  question: string;
+  channel: ClarificationChannel;
+  recipient?: string;
+}
+
+export async function sendClarification(
+  eventId: string,
+  payload: ClarificationCreatePayload
+): Promise<ClarificationRequest> {
+  return fetchJSON(`/events/${eventId}/clarification`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getEventSession(
+  eventId: string
+): Promise<ChatSessionResponse> {
+  return fetchJSON(`/events/${eventId}/session`);
+}
+
+export async function getClarificationRequests(
+  eventId: string
+): Promise<{ items: ClarificationRequest[] }> {
+  return fetchJSON(`/events/${eventId}/clarification-requests`);
 }

@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 from app.config import settings
 from app.database import SessionLocal
 from app.models.llm_log import LLMLog
+from app.services.api_clients import get_anthropic_client
 
 MAX_HISTORY = 20  # 保留最近 20 則訊息，避免 token 過多
 
@@ -33,12 +34,16 @@ SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你
    - 受困（trapped）：無法自行脫離現場、需要搜救的人員（如被瓦礫壓住、受困電梯）
    - 「等待救援／救護」不等於受困，應計入 injured
 6. **詳細描述**：災情現場狀況
+7. **聯絡方式**（必要）：通報者姓名（reporter_name）與電話（reporter_phone），用於後續追問補充資訊；並詢問**偏好聯絡管道**（preferred_channel：sms、line、email 擇一）：
+   - 若選 line，請請民眾先加入「災害通報中心」LINE 官方帳號，並提供其 LINE user id（reporter_line_user_id）
+   - 若選 email，請收集電子信箱（reporter_email）
 
 ## 對話策略
 - 先確認民眾安全
 - 如果民眾一次提供很多資訊，直接整理並確認
 - 如果資訊不足，逐步追問，但不要過於繁瑣
 - 提交通報前，若尚未取得發生時間，必須先追問一次；若民眾明確表示不知道或無法回答，才可省略
+- 提交通報前必須已取得**通報者姓名、電話、與偏好聯絡管道**（preferred_channel），這是後續追問補充資訊的必要資料
 - 詢問嚴重程度時，必須在問題中列出各級說明（1–5 級的描述），讓民眾能自行對應
 - 至少收集到災情種類、地點、嚴重程度，且已詢問過發生時間後，才可提交通報
 - 收集到足夠資訊後，呼叫 submit_disaster_report 工具提交通報
@@ -76,10 +81,20 @@ SUBMIT_TOOL = {
                 "type": "string",
                 "description": "使用者選擇要合併的事件 UUID。若使用者選擇建立新事件，填入 'new'。僅在系統提示需要使用者選擇時才使用此欄位。"
             },
-            "reporter_name":  {"type": "string"},
-            "reporter_phone": {"type": "string"},
+            "reporter_name":  {"type": "string", "description": "通報者姓名"},
+            "reporter_phone": {"type": "string", "description": "通報者電話"},
+            "reporter_email": {"type": "string", "description": "通報者電子信箱（preferred_channel=email 時必填）"},
+            "reporter_line_user_id": {"type": "string", "description": "通報者 LINE user id（preferred_channel=line 時必填）"},
+            "preferred_channel": {
+                "type": "string",
+                "enum": ["sms", "line", "email"],
+                "description": "民眾偏好的聯絡方式，用於通報中心追問補充資訊",
+            },
         },
-        "required": ["disaster_type", "description", "location_text", "severity"]
+        "required": [
+            "disaster_type", "description", "location_text", "severity",
+            "reporter_name", "reporter_phone", "preferred_channel",
+        ]
     }
 }
 
@@ -116,9 +131,57 @@ def _strip_thinking(text: str, state: dict) -> str:
     return "".join(result)
 
 
-def _get_client() -> anthropic.AsyncAnthropic:
-    # return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    return anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY, base_url="https://api.banana2556.com" )
+# ---------------------------------------------------------------------------
+# 資訊完整度評估（方案 A 核心）
+# ---------------------------------------------------------------------------
+
+COMPLETENESS_THRESHOLD = 0.7  # score < 此門檻 → 建議追問
+
+_LOCATION_ROAD_MARKERS = ("路", "街", "號", "巷", "弄", "段", "里")
+_LOCATION_LANDMARK_MARKERS = (
+    "站", "機場", "學校", "公園", "醫院", "百貨",
+    "寺", "廟", "大樓", "館", "場",
+)
+
+
+def _is_location_precise(loc: str | None) -> bool:
+    """判斷地址是否具體：含路名/街/號/段，或含知名地標關鍵字。"""
+    if not loc or len(loc.strip()) < 4:
+        return False
+    return any(m in loc for m in _LOCATION_ROAD_MARKERS) or any(
+        m in loc for m in _LOCATION_LANDMARK_MARKERS
+    )
+
+
+def compute_completeness(extracted_data: dict) -> dict:
+    """評估通報資料完整度。
+
+    檢查 6 個關鍵欄位：
+    - occurred_at：是否有發生時間
+    - casualties / injured / trapped：傷亡三欄是否明確回答（None 視為缺）
+    - location_text：是否精確（非僅縣市名）
+    - description：長度是否 ≥ 20
+
+    回傳 {"score": 0.0-1.0, "missing": [...缺漏欄位代碼]}
+    """
+    missing: list[str] = []
+
+    if not extracted_data.get("occurred_at"):
+        missing.append("occurred_at")
+
+    for field in ("casualties", "injured", "trapped"):
+        if extracted_data.get(field) is None:
+            missing.append(field)
+
+    if not _is_location_precise(extracted_data.get("location_text")):
+        missing.append("location_text")
+
+    desc = extracted_data.get("description") or ""
+    if len(desc) < 20:
+        missing.append("description")
+
+    score = round((6 - len(missing)) / 6, 2)
+    return {"score": score, "missing": missing}
 
 
 async def merge_event_descriptions(existing: str, new: str) -> str:
@@ -128,7 +191,7 @@ async def merge_event_descriptions(existing: str, new: str) -> str:
     if not new or existing == new:
         return existing
 
-    client = _get_client()
+    client = get_anthropic_client()
     try:
         message = await client.messages.create(
             # model="claude-haiku-4-5-20251001",
@@ -161,7 +224,7 @@ async def reextract_numbers_from_description(description: str) -> dict:
     失敗或找不到時回傳 {}，呼叫端保留原 max() 值。"""
     if not description:
         return {}
-    client = _get_client()
+    client = get_anthropic_client()
     try:
         message = await client.messages.create(
             # model="claude-haiku-4-5-20251001",
@@ -209,7 +272,7 @@ async def stream_chat(messages: list[dict]):
                   {"type": "tool_use", "tool": str, "data": dict}
                   {"type": "done"}
     """
-    client = _get_client()
+    client = get_anthropic_client()
 
     if len(messages) > MAX_HISTORY:
         messages = messages[-MAX_HISTORY:]

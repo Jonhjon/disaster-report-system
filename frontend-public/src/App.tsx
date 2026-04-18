@@ -4,6 +4,7 @@ import Sidebar from "./components/layout/Sidebar";
 import MapPage from "./pages/MapPage";
 import ReportPage from "./pages/ReportPage";
 import HelpPage from "./pages/HelpPage";
+import ResumeReportPage from "./pages/ResumeReportPage";
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Routes>
             <Route path="/" element={<MapPage />} />
             <Route path="/report" element={<ReportPage />} />
+            <Route path="/chat/resume/:token" element={<ResumeReportPage />} />
             <Route path="/help" element={<HelpPage />} />
           </Routes>
         </main>

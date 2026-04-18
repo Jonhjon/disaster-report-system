@@ -1,19 +1,28 @@
 import json
 from datetime import datetime, timezone
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
+from app.api.rate_limit import enforce_session_token_rate_limit
 from app.database import get_db
+from app.models.chat_session import ChatSession
 from app.models.disaster_event import DisasterEvent
 from app.models.disaster_report import DisasterReport
 from app.schemas.chat import ChatRequest
+from app.schemas.chat_session import ChatSessionPublic
 from app.services import llm_service
 from app.services.dedup_service import find_and_score_candidates
 from app.services.geocoding_service import geocode_address
-from app.services.llm_service import merge_event_descriptions, reextract_numbers_from_description
+from app.services.llm_service import (
+    COMPLETENESS_THRESHOLD,
+    compute_completeness,
+    merge_event_descriptions,
+    reextract_numbers_from_description,
+)
 from geoalchemy2.functions import ST_SetSRID, ST_MakePoint
 
 router = APIRouter()
@@ -158,11 +167,61 @@ async def _merge_into_event(
         target_event.trapped += tool_data.get("trapped", 0)
         target_event.severity = max(target_event.severity, tool_data["severity"])
 
+    # 續接補齊：若原本缺 occurred_at 且新通報有提供，則填入
+    if target_event.occurred_at is None and tool_data.get("occurred_at"):
+        try:
+            parsed = datetime.fromisoformat(tool_data["occurred_at"])
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Taipei"))
+            target_event.occurred_at = parsed
+        except ValueError:
+            pass
+
+    # 續接補齊：若新通報提供更精確的 location_text，則更新
+    new_loc = (tool_data.get("location_text") or "").strip()
+    if new_loc and new_loc != (target_event.location_text or ""):
+        from app.services.llm_service import _is_location_precise
+        if _is_location_precise(new_loc) and not _is_location_precise(target_event.location_text):
+            target_event.location_text = new_loc
+
     target_event.updated_at = datetime.now(timezone.utc)
+
+    # 重新計算完整度（基於合併後的事件狀態）
+    event_snapshot = {
+        "occurred_at": target_event.occurred_at,
+        "casualties": target_event.casualties,
+        "injured": target_event.injured,
+        "trapped": target_event.trapped,
+        "location_text": target_event.location_text,
+        "description": target_event.description,
+    }
+    new_completeness = compute_completeness(event_snapshot)
+    target_event.completeness = new_completeness
+
+    # 若原本在等追問，現在資訊補齊 → 回到 reported
+    if (
+        target_event.status == "pending_clarification"
+        and new_completeness["score"] >= COMPLETENESS_THRESHOLD
+    ):
+        target_event.status = "reported"
+        # 將最新一筆未回覆的 clarification_request 標記為 replied
+        from app.models.clarification_request import ClarificationRequest
+        latest_clarif = (
+            db.query(ClarificationRequest)
+            .filter(ClarificationRequest.event_id == target_event.id)
+            .order_by(ClarificationRequest.created_at.desc())
+            .first()
+        )
+        if latest_clarif is not None and latest_clarif.status != "replied":
+            latest_clarif.status = "replied"
+            latest_clarif.replied_at = datetime.now(timezone.utc)
 
     report = DisasterReport(
         reporter_name=tool_data.get("reporter_name"),
         reporter_phone=tool_data.get("reporter_phone"),
+        reporter_email=tool_data.get("reporter_email"),
+        reporter_line_user_id=tool_data.get("reporter_line_user_id"),
+        preferred_channel=tool_data.get("preferred_channel"),
         raw_message=raw_message,
         extracted_data=tool_data,
         location=point,
@@ -209,6 +268,9 @@ def _create_new_event(
     )
     title = f"{tool_data['location_text']}{type_name}"
 
+    completeness = compute_completeness(tool_data)
+    needs_clarification = completeness["score"] < COMPLETENESS_THRESHOLD
+
     event = DisasterEvent(
         title=title,
         disaster_type=tool_data["disaster_type"],
@@ -221,6 +283,8 @@ def _create_new_event(
         injured=tool_data.get("injured", 0),
         trapped=tool_data.get("trapped", 0),
         location_approximate=location_approximate,
+        completeness=completeness,
+        status="pending_clarification" if needs_clarification else "reported",
     )
     db.add(event)
     db.flush()
@@ -228,6 +292,9 @@ def _create_new_event(
     report = DisasterReport(
         reporter_name=tool_data.get("reporter_name"),
         reporter_phone=tool_data.get("reporter_phone"),
+        reporter_email=tool_data.get("reporter_email"),
+        reporter_line_user_id=tool_data.get("reporter_line_user_id"),
+        preferred_channel=tool_data.get("preferred_channel"),
         raw_message=raw_message,
         extracted_data=tool_data,
         location=point,
@@ -235,12 +302,32 @@ def _create_new_event(
         event_id=event.id,
     )
     db.add(report)
+    db.flush()
+
+    session_info: dict = {}
+    if needs_clarification:
+        chat_session = ChatSession(
+            event_id=event.id,
+            report_id=report.id,
+            messages=[{"role": "user", "content": raw_message}],
+            pending_questions=[],
+            status="awaiting_user",
+        )
+        db.add(chat_session)
+        db.flush()
+        session_info = {
+            "needs_clarification": True,
+            "session_token": str(chat_session.session_token),
+            "missing_fields": completeness["missing"],
+        }
+
     db.commit()
     return {
         "status": "created",
         "event_id": str(event.id),
         "message": f"已建立新的災情事件「{title}」",
         "geocoded_address": geocoded_address,
+        **session_info,
     }
 
 
@@ -336,8 +423,27 @@ async def _process_tool_use(
 
 @router.post("/chat")
 async def chat(request: ChatRequest, db: Session = Depends(get_db)):
-    # Build messages for Claude
-    messages = [{"role": m.role, "content": m.content} for m in request.history]
+    # 若帶 session_token，從 DB 載入既有對話作為歷史
+    stored_session: ChatSession | None = None
+    session_history: list[dict] = []
+    if request.session_token is not None:
+        stored_session = (
+            db.query(ChatSession)
+            .filter(ChatSession.session_token == request.session_token)
+            .first()
+        )
+        if stored_session is not None:
+            session_history = [
+                {"role": m.get("role", "user"), "content": m.get("content", "")}
+                for m in (stored_session.messages or [])
+                if m.get("role") in ("user", "assistant") and m.get("content")
+            ]
+
+    # Build messages for Claude: session history → request history → new message
+    history_from_request = [
+        {"role": m.role, "content": m.content} for m in request.history
+    ]
+    messages = session_history + history_from_request
     messages.append({"role": "user", "content": request.message})
 
     # Collect raw message for report
@@ -346,7 +452,12 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     ) + f"\n[user] {request.message}"
 
     async def event_generator():
+        # 累計整段 assistant 回覆，用於 session 續寫
+        assistant_reply_parts: list[str] = []
+
         def _sse(data: dict) -> dict:
+            if data.get("type") == "text" and isinstance(data.get("content"), str):
+                assistant_reply_parts.append(data["content"])
             return {"event": "message", "data": json.dumps(data, ensure_ascii=False)}
 
         async def _dedup_continuation(result: dict, tool_data: dict, tool_use_id: str, ctx_msgs: list):
@@ -563,5 +674,45 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             else:
                 friendly = f"AI 服務發生錯誤，請稍後再試。（{error_msg[:120]}）"
             yield _sse({"type": "error", "message": friendly})
+        finally:
+            # 續接模式：將本輪的新訊息寫回 chat_sessions
+            if stored_session is not None:
+                try:
+                    existing = list(stored_session.messages or [])
+                    existing.append({"role": "user", "content": request.message})
+                    reply = "".join(assistant_reply_parts).strip()
+                    if reply:
+                        existing.append({"role": "assistant", "content": reply})
+                    stored_session.messages = existing
+                    stored_session.last_active_at = datetime.now(timezone.utc)
+                    # 使用者剛回覆，清空 pending_questions
+                    stored_session.pending_questions = []
+                    stored_session.status = "active"
+                    db.commit()
+                except Exception:
+                    db.rollback()
 
     return EventSourceResponse(event_generator(), ping=15)
+
+
+@router.get("/chat/session/{token}", response_model=ChatSessionPublic)
+def get_chat_session(
+    token: UUID,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(enforce_session_token_rate_limit),
+):
+    """公開 endpoint：民眾憑 session_token 取得對話續接資料（免認證）。"""
+    session = (
+        db.query(ChatSession)
+        .filter(ChatSession.session_token == token)
+        .first()
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="對話連結無效或已過期")
+    return ChatSessionPublic(
+        session_token=session.session_token,
+        status=session.status,
+        messages=list(session.messages or []),
+        pending_questions=list(session.pending_questions or []),
+        event_id=session.event_id,
+    )

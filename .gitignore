@@ -31,3 +31,4 @@ Thumbs.db
 node_modules
 evaluation/
 tests/
+.env

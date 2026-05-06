@@ -58,7 +58,8 @@ def get_events(
     )
 
     if search:
-        pattern = f"%{search}%"
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
         query = query.filter(
             or_(
                 DisasterEvent.title.ilike(pattern),

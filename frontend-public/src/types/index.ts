@@ -42,25 +42,9 @@ export type DisasterType =
   | "other";
 
 export type EventStatus =
-  | "pending_clarification"
   | "reported"
   | "in_progress"
   | "resolved";
-
-export interface PendingQuestion {
-  id: string;
-  question: string;
-  asked_by: string;
-  asked_at: string;
-}
-
-export interface ChatSessionResponse {
-  session_token: string;
-  status: "active" | "awaiting_user" | "closed";
-  messages: ChatMessage[];
-  pending_questions: PendingQuestion[];
-  event_id: string | null;
-}
 
 export interface EventMapItem {
   id: string;
@@ -103,7 +87,6 @@ export const DISASTER_TYPE_LABELS: Record<DisasterType, string> = {
 };
 
 export const STATUS_LABELS: Record<EventStatus, string> = {
-  pending_clarification: "待補充",
   reported: "通報中",
   in_progress: "處理中",
   resolved: "已結案",

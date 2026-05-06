@@ -1,11 +1,21 @@
+import { z, type ZodType } from "zod";
 import type {
   ChatMessage,
-  ChatSessionResponse,
   EventCandidate,
   EventMapItem,
 } from "../types";
+import { EventMapItemSchema } from "../schemas/event";
 
 const BASE_URL = "/api";
+
+function parseWith<T>(schema: ZodType<T>, raw: unknown): T {
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    console.error("[API] Schema validation failed:", result.error.format());
+    throw new Error("API response 格式異常，請重新整理頁面。");
+  }
+  return result.data;
+}
 
 export async function getMapEvents(params: {
   bounds?: string;
@@ -25,7 +35,8 @@ export async function getMapEvents(params: {
   if (!response.ok) {
     throw new Error(`API Error: ${response.status} ${response.statusText}`);
   }
-  return response.json();
+  const raw: unknown = await response.json();
+  return parseWith(z.object({ items: z.array(EventMapItemSchema) }), raw);
 }
 
 export function streamChat(
@@ -35,18 +46,14 @@ export function streamChat(
   onReportSubmitted: (data: Record<string, unknown>) => void,
   onDone: () => void,
   onError: (error: string) => void,
-  onCandidatesSelection?: (candidates: EventCandidate[]) => void,
-  sessionToken?: string
+  onCandidatesSelection?: (candidates: EventCandidate[]) => void
 ): AbortController {
   const controller = new AbortController();
-
-  const body: Record<string, unknown> = { message, history };
-  if (sessionToken) body.session_token = sessionToken;
 
   fetch(`${BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ message, history }),
     signal: controller.signal,
   })
     .then(async (response) => {
@@ -100,19 +107,4 @@ export function streamChat(
     });
 
   return controller;
-}
-
-export async function getChatSession(
-  token: string
-): Promise<ChatSessionResponse> {
-  const response = await fetch(`${BASE_URL}/chat/session/${token}`, {
-    headers: { "Content-Type": "application/json" },
-  });
-  if (response.status === 404) {
-    throw new Error("對話連結無效或已過期");
-  }
-  if (!response.ok) {
-    throw new Error(`API Error: ${response.status} ${response.statusText}`);
-  }
-  return response.json();
 }

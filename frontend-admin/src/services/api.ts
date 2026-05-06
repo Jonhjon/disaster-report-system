@@ -1,15 +1,28 @@
+import { type ZodType } from "zod";
 import type {
-  ChatSessionResponse,
-  ClarificationChannel,
-  ClarificationRequest,
   DisasterEvent,
   DisasterReport,
   EventListResponse,
   EventMapItem,
   EventUpdateData,
 } from "../types";
+import {
+  DisasterEventSchema,
+  EventListResponseSchema,
+} from "../schemas";
 
 const BASE_URL = "/api";
+
+function parseWith<T>(schema: ZodType<T>, raw: unknown): T {
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    console.error("[API] Schema validation failed:", result.error.format());
+    throw new Error(
+      "API response 格式異常，請重新整理頁面或聯絡系統管理員。"
+    );
+  }
+  return result.data;
+}
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem("token");
@@ -53,21 +66,24 @@ export async function getEvents(params: {
       searchParams.set(key, String(value));
     }
   });
-  return fetchJSON(`/events?${searchParams}`);
+  const raw = await fetchJSON<unknown>(`/events?${searchParams}`);
+  return parseWith(EventListResponseSchema, raw);
 }
 
 export async function getEvent(id: string): Promise<DisasterEvent> {
-  return fetchJSON(`/events/${id}`);
+  const raw = await fetchJSON<unknown>(`/events/${id}`);
+  return parseWith(DisasterEventSchema, raw);
 }
 
 export async function updateEvent(
   id: string,
   data: EventUpdateData
 ): Promise<DisasterEvent> {
-  return fetchJSON(`/events/${id}`, {
+  const raw = await fetchJSON<unknown>(`/events/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
+  return parseWith(DisasterEventSchema, raw);
 }
 
 export async function deleteEvent(id: string): Promise<void> {
@@ -123,32 +139,4 @@ export async function getMapEvents(params: {
 
 export async function getLLMLogs(): Promise<Record<string, unknown>[]> {
   return fetchJSON("/llm-logs");
-}
-
-export interface ClarificationCreatePayload {
-  question: string;
-  channel: ClarificationChannel;
-  recipient?: string;
-}
-
-export async function sendClarification(
-  eventId: string,
-  payload: ClarificationCreatePayload
-): Promise<ClarificationRequest> {
-  return fetchJSON(`/events/${eventId}/clarification`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getEventSession(
-  eventId: string
-): Promise<ChatSessionResponse> {
-  return fetchJSON(`/events/${eventId}/session`);
-}
-
-export async function getClarificationRequests(
-  eventId: string
-): Promise<{ items: ClarificationRequest[] }> {
-  return fetchJSON(`/events/${eventId}/clarification-requests`);
 }

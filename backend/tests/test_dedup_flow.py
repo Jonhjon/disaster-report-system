@@ -93,6 +93,8 @@ def _make_fire_tool_data(location_text: str = "花蓮縣餅") -> dict:
         "injured": 3,
         "trapped": 0,
         "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "reporter_name": "測試者",
+        "reporter_phone": "0900000000",
     }
 
 

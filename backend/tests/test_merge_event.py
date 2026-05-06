@@ -14,6 +14,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from tests.conftest import resolve_atomic
+from app.schemas.llm_tools import SubmitDisasterReportPayload
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -84,9 +87,11 @@ def _merge_tool_data(event_id, **overrides):
         "trapped": 0,
         "occurred_at": datetime.now(timezone.utc).isoformat(),
         "merge_event_id": str(event_id),
+        "reporter_name": "測試者",
+        "reporter_phone": "0900000000",
     }
     data.update(overrides)
-    return data
+    return SubmitDisasterReportPayload.model_validate(data)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -444,7 +449,7 @@ class TestMergeNumbersFallback:
             result = await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
 
         assert result["status"] == "merged"
-        assert target.injured == 6  # 3 + 3
+        assert resolve_atomic(target.injured, 3) == 6  # 3 + 3 (atomic SQL increment)
 
     @pytest.mark.asyncio
     async def test_fallback_cumulates_all_fields(self):
@@ -477,9 +482,9 @@ class TestMergeNumbersFallback:
             result = await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
 
         assert result["status"] == "merged"
-        assert target.casualties == 3  # 1 + 2
-        assert target.injured == 5     # 2 + 3
-        assert target.trapped == 3     # 1 + 2
+        assert resolve_atomic(target.casualties, 1) == 3  # 1 + 2
+        assert resolve_atomic(target.injured, 2) == 5     # 2 + 3
+        assert resolve_atomic(target.trapped, 1) == 3     # 1 + 2
 
     @pytest.mark.asyncio
     async def test_fallback_when_reextract_raises_exception(self):
@@ -508,7 +513,7 @@ class TestMergeNumbersFallback:
             result = await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
 
         assert result["status"] == "merged"
-        assert target.injured == 5  # fallback: 3 + 2
+        assert resolve_atomic(target.injured, 3) == 5  # fallback: 3 + 2
 
     @pytest.mark.asyncio
     async def test_fallback_when_merge_descriptions_raises_exception(self):
@@ -536,7 +541,7 @@ class TestMergeNumbersFallback:
             result = await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
 
         assert result["status"] == "merged"
-        assert target.injured == 5  # fallback: 3 + 2
+        assert resolve_atomic(target.injured, 3) == 5  # fallback: 3 + 2
 
     @pytest.mark.asyncio
     async def test_fallback_new_report_has_zero_casualties(self):
@@ -569,9 +574,9 @@ class TestMergeNumbersFallback:
             result = await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
 
         assert result["status"] == "merged"
-        assert target.casualties == 2  # 2 + 0
-        assert target.injured == 4     # 4 + 0
-        assert target.trapped == 1     # 1 + 0
+        assert resolve_atomic(target.casualties, 2) == 2  # 2 + 0
+        assert resolve_atomic(target.injured, 4) == 4     # 4 + 0
+        assert resolve_atomic(target.trapped, 1) == 1     # 1 + 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -689,7 +694,7 @@ class TestMergeSeverityAndReportCount:
         ):
             await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
 
-        assert target.report_count == 4
+        assert resolve_atomic(target.report_count, 3) == 4
 
     @pytest.mark.asyncio
     async def test_report_count_incremented_on_fallback(self):
@@ -716,7 +721,7 @@ class TestMergeSeverityAndReportCount:
         ):
             await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
 
-        assert target.report_count == 2
+        assert resolve_atomic(target.report_count, 1) == 2
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

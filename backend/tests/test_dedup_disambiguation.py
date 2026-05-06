@@ -14,11 +14,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.schemas.llm_tools import SubmitDisasterReportPayload
+
 from app.services.dedup_service import (
     find_and_score_candidates,
     find_candidate_events,
     _compute_dedup_score,
 )
+from tests.conftest import resolve_atomic
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -75,7 +78,7 @@ def _make_mock_db():
 
 
 def _base_tool_data(**overrides):
-    """產生基本的 tool_data dict，可覆寫任意欄位。"""
+    """產生基本的 tool_data，可覆寫任意欄位。"""
     data = {
         "disaster_type": "flooding",
         "description": "信義路附近淹水約30公分",
@@ -85,9 +88,11 @@ def _base_tool_data(**overrides):
         "injured": 0,
         "trapped": 0,
         "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "reporter_name": "測試者",
+        "reporter_phone": "0900000000",
     }
     data.update(overrides)
-    return data
+    return SubmitDisasterReportPayload.model_validate(data)
 
 
 def _base_coords(**overrides):
@@ -540,7 +545,7 @@ class TestProcessToolUsePathB:
 
         assert result["status"] == "merged"
         assert result["event_id"] == str(target_event.id)
-        assert target_event.report_count == 3
+        assert resolve_atomic(target_event.report_count, 2) == 3
         assert target_event.severity == 4
         assert target_event.injured == 4  # LLM 萃取值
         mock_db.commit.assert_called()
@@ -633,7 +638,7 @@ class TestProcessToolUsePathB:
         assert target.casualties == 1  # LLM 萃取
         assert target.injured == 8    # LLM 萃取（累計）
         assert target.trapped == 3    # LLM 萃取（累計）
-        assert target.report_count == 2
+        assert resolve_atomic(target.report_count, 1) == 2
 
     @pytest.mark.asyncio
     async def test_merge_creates_report_linked_to_event(self):
@@ -796,7 +801,7 @@ class TestDedupDisambiguationFlow:
         result = await _process_tool_use(tool_data, "原始訊息", mock_db, coords)
 
         assert result["status"] == "merged"
-        assert target.report_count == 2
+        assert resolve_atomic(target.report_count, 1) == 2
 
     @pytest.mark.asyncio
     async def test_second_call_with_new_creates_event(self):

@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -5,6 +6,10 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
+
+# 提前設定測試環境變數，必須在 `from app.config import settings` 之前執行，
+# 否則 Settings 實例化時會因缺少 JWT_SECRET_KEY 而報錯。
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-" + "x" * 40)
 
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
@@ -99,3 +104,27 @@ def auth_headers():
     """產生有效的 JWT Authorization header"""
     token = create_access_token({"sub": "testadmin"})
     return {"Authorization": f"Bearer {token}"}
+
+
+def resolve_atomic(attr_value, original: int):
+    """在測試中解析 SQL atomic increment 表達式。
+
+    _merge_into_event 對 report_count / casualties 等欄位使用
+    `DisasterEvent.col + delta`（BinaryExpression），真實 flush 後才會變 int。
+    測試用 MagicMock 時沒有 flush，此 helper 模擬該表達式對原值的作用，
+    讓測試能以 int 比對。
+    """
+    from sqlalchemy.sql.elements import BinaryExpression
+
+    if not isinstance(attr_value, BinaryExpression):
+        return attr_value
+    right = attr_value.right
+    delta = getattr(right, "value", None)
+    if delta is None:
+        delta = int(str(right))
+    op = attr_value.operator.__name__
+    if op == "add":
+        return original + delta
+    if op == "sub":
+        return original - delta
+    raise ValueError(f"unsupported op: {op}")

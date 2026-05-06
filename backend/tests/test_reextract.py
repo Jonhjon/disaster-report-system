@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.schemas.llm_tools import SubmitDisasterReportPayload
 from app.services.llm_service import reextract_numbers_from_description
 
 
@@ -109,7 +110,7 @@ async def test_merge_branch_updates_fields_via_merge_event_id(mock_db):
 
     mock_db.get.return_value = mock_event
 
-    tool_data = {
+    tool_data = SubmitDisasterReportPayload.model_validate({
         "disaster_type": "fire",
         "description": "中山路便利商店火災，確認6人受傷，均已送醫。",
         "location_text": "台北市中山路",
@@ -118,7 +119,9 @@ async def test_merge_branch_updates_fields_via_merge_event_id(mock_db):
         "injured": 6,
         "trapped": 0,
         "merge_event_id": str(mock_event.id),
-    }
+        "reporter_name": "測試者",
+        "reporter_phone": "0900000000",
+    })
     coords = {"display_name": "台北市中山路", "latitude": 25.05, "longitude": 121.53}
 
     result = await _process_tool_use(tool_data, "通報訊息", mock_db, coords)
@@ -146,7 +149,7 @@ async def test_merge_branch_keeps_higher_existing_values(mock_db):
 
     mock_db.get.return_value = mock_event
 
-    tool_data = {
+    tool_data = SubmitDisasterReportPayload.model_validate({
         "disaster_type": "fire",
         "description": "中山路7-11發生火災，5人受傷。",
         "location_text": "台北市中山路",
@@ -155,7 +158,9 @@ async def test_merge_branch_keeps_higher_existing_values(mock_db):
         "injured": 5,
         "trapped": 0,
         "merge_event_id": str(mock_event.id),
-    }
+        "reporter_name": "測試者",
+        "reporter_phone": "0900000000",
+    })
     coords = {"display_name": "台北市中山路", "latitude": 25.05, "longitude": 121.53}
 
     result = await _process_tool_use(tool_data, "通報訊息", mock_db, coords)

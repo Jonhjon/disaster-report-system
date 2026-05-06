@@ -221,6 +221,8 @@ _BASE_TOOL_DATA = {
     "casualties": 0,
     "injured": 0,
     "trapped": 0,
+    "reporter_name": "測試者",
+    "reporter_phone": "0900000000",
 }
 
 _PRECISE_TOOL_DATA = {

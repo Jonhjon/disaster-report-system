@@ -14,10 +14,15 @@ Write-Host '=== 智慧災害通報系統啟動中 ===' -ForegroundColor Cyan
 $EnvFile = Join-Path $BackendDir '.env'
 if (Test-Path $EnvFile) {
     $EnvContent = Get-Content $EnvFile -Raw
-    if ($EnvContent -match 'your-api-key-here' -or $EnvContent -notmatch 'ANTHROPIC_API_KEY=sk-ant-') {
+    # 容許值前後有引號或空白：擷取 ANTHROPIC_API_KEY 的值再判斷
+    $apiKey = $null
+    if ($EnvContent -match '(?m)^\s*ANTHROPIC_API_KEY\s*=\s*["'']?([^"''\r\n]+)["'']?\s*$') {
+        $apiKey = $Matches[1].Trim()
+    }
+    if (-not $apiKey -or $apiKey -eq 'your-api-key-here') {
         Write-Host ''
         Write-Host '[錯誤] 請先設定 ANTHROPIC_API_KEY！' -ForegroundColor Red
-        Write-Host '請編輯此檔案並填入 Anthropic API Key (sk-ant-...)：' -ForegroundColor Yellow
+        Write-Host '請編輯此檔案並填入 Anthropic API Key：' -ForegroundColor Yellow
         Write-Host "  $EnvFile" -ForegroundColor Yellow
         Write-Host ''
         Read-Host '設定完成後按 Enter 繼續'
@@ -83,17 +88,83 @@ $VenvPython = Join-Path $BackendDir 'venv\Scripts\python.exe'
 $VenvAlembic = Join-Path $BackendDir 'venv\Scripts\alembic.exe'
 & $VenvAlembic upgrade head
 if ($LASTEXITCODE -ne 0) {
-    Write-Host '[警告] 資料庫遷移失敗（資料表可能已存在，繼續啟動）' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host '[!!] Alembic 遷移失敗' -ForegroundColor Red
+    Write-Host '     後端可能因 schema 不一致而報錯。請依序確認：' -ForegroundColor Yellow
+    Write-Host '       1. Docker 容器 disaster_db 是否就緒（docker ps）' -ForegroundColor Yellow
+    Write-Host '       2. backend\.env 的 DATABASE_URL 密碼是否與 docker-compose.yml 一致' -ForegroundColor Yellow
+    Write-Host '       3. 手動檢查當前版本：venv\Scripts\alembic.exe current' -ForegroundColor Yellow
+    Write-Host '       4. 手動套用：venv\Scripts\alembic.exe upgrade head' -ForegroundColor Yellow
+    Write-Host '     腳本會繼續啟動服務，但若後端啟動後 API 報 500，請優先排查上述項目。' -ForegroundColor Yellow
+    Write-Host ''
 }
 
 # 5. 啟動後端（新視窗）
 Write-Host ''
 Write-Host '[4/5] 啟動後端服務...' -ForegroundColor Yellow
 
-# 先清除佔用 port 的舊程序
-Write-Host '      清除舊程序...' -ForegroundColor DarkGray
-Get-Process -Name "python" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+# 先清除佔用 port 8000 的舊 uvicorn / 殭屍 worker
+# 三層保險：(1) 抓 cmdline 含 uvicorn 的 python；(2) 抓這些 python 的 child；(3) 抓 port 8000 的 owner
+Write-Host '      清除舊 uvicorn 程序與佔用 port 8000 的 worker...' -ForegroundColor DarkGray
+
+function Stop-DescendantProcesses {
+    param([int]$ParentId)
+    $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$ParentId" -ErrorAction SilentlyContinue
+    foreach ($c in $children) {
+        Stop-DescendantProcesses -ParentId ([int]$c.ProcessId)
+        Stop-Process -Id $c.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+}
+
+$pidsToKill = New-Object System.Collections.Generic.HashSet[int]
+
+# (1) 直接 cmdline match uvicorn 的 python 主進程
+Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='pythonw.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -match 'uvicorn' } |
+    ForEach-Object {
+        [void]$pidsToKill.Add([int]$_.ProcessId)
+        # (2) 連同 multiprocessing-fork 子 worker 一起清
+        Get-CimInstance Win32_Process -Filter "ParentProcessId=$($_.ProcessId)" -ErrorAction SilentlyContinue |
+            ForEach-Object { [void]$pidsToKill.Add([int]$_.ProcessId) }
+    }
+
+# (3) 不論 cmdline，凡是 LISTEN 8000 的 owner + 其 parent / 兄弟 worker 全清
+Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+    ForEach-Object {
+        $owner = $_.OwningProcess
+        if ($owner) {
+            [void]$pidsToKill.Add([int]$owner)
+            $info = Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue
+            if ($info -and $info.ParentProcessId) {
+                [void]$pidsToKill.Add([int]$info.ParentProcessId)
+                # 兄弟 worker（同一個父程序底下）
+                Get-CimInstance Win32_Process -Filter "ParentProcessId=$($info.ParentProcessId)" -ErrorAction SilentlyContinue |
+                    ForEach-Object { [void]$pidsToKill.Add([int]$_.ProcessId) }
+            }
+        }
+    }
+
+foreach ($pidToKill in $pidsToKill) {
+    Stop-DescendantProcesses -ParentId $pidToKill
+    Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
+}
+
+# 確認 port 真的釋放
 Start-Sleep -Seconds 1
+$stillListening = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+if ($stillListening) {
+    Write-Host '      [警告] port 8000 仍被佔用，5 秒後再嘗試一次...' -ForegroundColor Yellow
+    $stillListening.OwningProcess | Sort-Object -Unique | ForEach-Object {
+        Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 5
+}
+
+# 清除 backend 下已刪除模組殘留的 .pyc（防止 import 載到不存在的舊模組）
+Write-Host '      清除 backend __pycache__（避免 stale .pyc）...' -ForegroundColor DarkGray
+Get-ChildItem -Path $BackendDir -Recurse -Force -Directory -Filter '__pycache__' -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '\\venv\\' -and $_.FullName -notmatch '\\node_modules\\' } |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 $backendScript = "Set-Location '" + $BackendDir + "'; & '" + $VenvPython + "' -m uvicorn app.main:app --reload"
 $backendProc = Start-Process powershell -ArgumentList '-NoExit', '-Command', $backendScript -PassThru

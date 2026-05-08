@@ -1,5 +1,6 @@
 import { DISASTER_TYPE_LABELS } from "../../types";
 import type { DisasterType } from "../../types";
+import { isDisasterType } from "../../utils/disasterType";
 
 interface MapFiltersProps {
   filters: {
@@ -18,12 +19,13 @@ function MapFilters({ filters, onChange }: MapFiltersProps) {
         <select
           className="rounded border px-2 py-1 text-sm"
           value={filters.disaster_type || ""}
-          onChange={(e) =>
+          onChange={(e) => {
+            const raw = e.target.value;
             onChange({
               ...filters,
-              disaster_type: (e.target.value as DisasterType) || undefined,
-            })
-          }
+              disaster_type: isDisasterType(raw) ? raw : undefined,
+            });
+          }}
         >
           <option value="">全部</option>
           {Object.entries(DISASTER_TYPE_LABELS).map(([value, label]) => (

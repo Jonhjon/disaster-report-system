@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import EventMarker from "./EventMarker";
@@ -47,6 +47,10 @@ function DisasterMap() {
     status: string;
   }>({ status: "reported" });
 
+  const handleEventsLoaded = useCallback((items: EventMapItem[]) => {
+    setEvents(items);
+  }, []);
+
   return (
     <div className="flex h-full flex-col">
       <MapFilters filters={filters} onChange={setFilters} />
@@ -60,7 +64,7 @@ function DisasterMap() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <MapEventLoader filters={filters} onEventsLoaded={setEvents} />
+          <MapEventLoader filters={filters} onEventsLoaded={handleEventsLoaded} />
           {events.map((event) => (
             <EventMarker
               key={event.id}

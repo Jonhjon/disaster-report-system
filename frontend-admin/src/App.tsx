@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+import ErrorBoundary from "./components/ErrorBoundary";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Header from "./components/layout/Header";
 import Sidebar from "./components/layout/Sidebar";
@@ -24,8 +25,9 @@ function AdminLayout({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <AuthProvider>
-      <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
           path="/*"
@@ -43,8 +45,9 @@ function App() {
             </ProtectedRoute>
           }
         />
-      </Routes>
-    </AuthProvider>
+        </Routes>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

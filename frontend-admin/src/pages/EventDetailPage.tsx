@@ -17,7 +17,7 @@ function EventDetailPage() {
     Promise.all([getEvent(id), getEventReports(id)])
       .then(([eventData, reportsData]) => {
         setEvent(eventData);
-        setReports(reportsData.items);
+        setReports(reportsData?.items ?? []);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));

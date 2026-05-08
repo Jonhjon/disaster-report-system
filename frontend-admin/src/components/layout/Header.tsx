@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import NotificationBell from "../notifications/NotificationBell";
 
 function Header() {
   const { user, logout } = useAuth();
@@ -10,6 +11,7 @@ function Header() {
         智慧災害通報系統 — 管理中心
       </Link>
       <div className="flex items-center gap-4">
+        <NotificationBell />
         <span className="text-sm">{user?.display_name || user?.username}</span>
         <button
           onClick={logout}

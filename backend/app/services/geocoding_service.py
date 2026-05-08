@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 _TW_LAT = (21.5, 25.5)
 _TW_LON = (119.5, 122.5)
 
+# M-3 fallback：geocoding 完全失敗時的代位座標（台灣中心約南投縣埔里附近）。
+# 用途：讓地圖 marker 仍能落點，避免因 None lat/lng 造成前端渲染失敗。
+# 前端應據 `location_approximate` 旗標顯示「位置概略」提示。
+TAIWAN_CENTER_LAT = 23.6978
+TAIWAN_CENTER_LON = 120.9605
+
 # Road-name characters — presence means the query is a street address, not a named place
 # Excludes "道" to avoid false positives like "道明國中"
 _ROAD_WORDS = ["路", "街", "大道", "巷", "弄"]

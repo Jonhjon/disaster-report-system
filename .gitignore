@@ -18,6 +18,13 @@ backend/alembic.ini
 # Node
 frontend/node_modules/
 frontend/dist/
+frontend-admin/node_modules/
+frontend-admin/dist/
+frontend-public/node_modules/
+frontend-public/dist/
+
+# TypeScript incremental build cache
+**/tsconfig.tsbuildinfo
 
 # IDE / OS
 .claude/

@@ -1,21 +1,22 @@
 import { NavLink } from "react-router-dom";
+import { Map, ClipboardList, BarChart2, HelpCircle, type LucideIcon } from "lucide-react";
 
-const navItems = [
-  { to: "/", label: "地圖總覽", icon: "🗺" },
-  { to: "/events", label: "災情列表", icon: "📋" },
-  { to: "/llm-logs", label: "LLM 日誌", icon: "📊" },
-  { to: "/help", label: "使用說明", icon: "❓" },
+const navItems: { to: string; label: string; Icon: LucideIcon }[] = [
+  { to: "/", label: "地圖總覽", Icon: Map },
+  { to: "/events", label: "災情列表", Icon: ClipboardList },
+  { to: "/llm-logs", label: "LLM 日誌", Icon: BarChart2 },
+  { to: "/help", label: "使用說明", Icon: HelpCircle },
 ];
 
 function Sidebar() {
   return (
     <aside className="w-48 border-r bg-white">
-      <nav className="flex flex-col gap-1 p-2">
-        {navItems.map((item) => (
+      <nav aria-label="主要導航" className="flex flex-col gap-1 p-2">
+        {navItems.map(({ to, label, Icon }) => (
           <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === "/"}
+            key={to}
+            to={to}
+            end={to === "/"}
             className={({ isActive }) =>
               `flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
                 isActive
@@ -24,8 +25,8 @@ function Sidebar() {
               }`
             }
           >
-            <span>{item.icon}</span>
-            {item.label}
+            <Icon size={16} aria-hidden="true" />
+            {label}
           </NavLink>
         ))}
       </nav>

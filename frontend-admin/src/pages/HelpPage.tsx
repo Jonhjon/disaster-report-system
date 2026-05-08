@@ -1,3 +1,4 @@
+import { Home, Map, ClipboardList, BarChart2 } from "lucide-react";
 import { DISASTER_TYPE_LABELS, DISASTER_TYPE_COLORS, DisasterType } from "../types/index";
 
 function HelpPage() {
@@ -8,8 +9,8 @@ function HelpPage() {
       <h1 className="text-2xl font-bold text-gray-800">使用說明</h1>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">
-          <span className="mr-2">🏠</span>系統介紹
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800">
+          <Home size={18} aria-hidden="true" />系統介紹
         </h2>
         <p className="mb-2 text-sm text-gray-700">
           <strong>智慧災害通報系統 — 管理中心</strong>
@@ -18,8 +19,8 @@ function HelpPage() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">
-          <span className="mr-2">🗺</span>地圖總覽
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800">
+          <Map size={18} aria-hidden="true" />地圖總覽
         </h2>
         <p className="mb-3 text-sm text-gray-700">
           地圖上的色點代表各災情事件，不同顏色對應不同災情類型：
@@ -38,8 +39,8 @@ function HelpPage() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">
-          <span className="mr-2">📋</span>災情列表
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800">
+          <ClipboardList size={18} aria-hidden="true" />災情列表
         </h2>
         <ul className="ml-4 list-disc space-y-2 text-sm text-gray-700">
           <li>
@@ -58,8 +59,8 @@ function HelpPage() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">
-          <span className="mr-2">📊</span>LLM 日誌
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800">
+          <BarChart2 size={18} aria-hidden="true" />LLM 日誌
         </h2>
         <p className="text-sm text-gray-700">
           顯示最近 100 筆 AI 模型呼叫紀錄，包含模型名稱、延遲、token 用量及狀態。可展開查看完整 prompt 和回應內容，用於監控系統運作狀況。

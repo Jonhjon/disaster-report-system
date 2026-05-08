@@ -1,3 +1,4 @@
+import { Home, Megaphone, Map } from "lucide-react";
 import { DISASTER_TYPE_LABELS, DISASTER_TYPE_COLORS, DisasterType } from "../types/index";
 
 function HelpPage() {
@@ -8,8 +9,8 @@ function HelpPage() {
       <h1 className="text-2xl font-bold text-gray-800">使用說明</h1>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">
-          <span className="mr-2">🏠</span>系統介紹
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800">
+          <Home size={18} aria-hidden="true" />系統介紹
         </h2>
         <p className="mb-2 text-sm text-gray-700">
           <strong>智慧災害通報系統</strong>
@@ -23,12 +24,12 @@ function HelpPage() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">
-          <span className="mr-2">📢</span>如何通報災情
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800">
+          <Megaphone size={18} aria-hidden="true" />如何通報災情
         </h2>
         <ol className="ml-4 list-decimal space-y-3 text-sm text-gray-700">
           <li>
-            <span className="font-medium">點選左側「📢 通報災情」</span>
+            <span className="font-medium">點選左側「通報災情」</span>
             ，進入通報頁面。
           </li>
           <li>
@@ -50,8 +51,8 @@ function HelpPage() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">
-          <span className="mr-2">🗺</span>地圖總覽
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800">
+          <Map size={18} aria-hidden="true" />地圖總覽
         </h2>
         <p className="mb-3 text-sm text-gray-700">
           地圖上的色點代表各災情事件，不同顏色對應不同災情類型：

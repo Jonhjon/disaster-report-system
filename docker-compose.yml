@@ -6,12 +6,20 @@ services:
     container_name: disaster_db
     environment:
       POSTGRES_DB: disaster_report
+      # POSTGRES_USER 保留 postgres superuser 供 DBA 手動介入；
+      # 應用程式改走 app_user（由 docker/init-db.sh 建立）。
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # 傳給 init-db.sh 使用（透過 shell env）
+      APP_DB_USER: app_user
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-changeme_in_production}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # M-8：container 首次啟動時自動執行 init script 建立 app_user。
+      # 注意：更改 init script 需先 `docker compose down -v` 清除舊 volume。
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/01_init_app_user.sh:ro
 
 volumes:
   pgdata:

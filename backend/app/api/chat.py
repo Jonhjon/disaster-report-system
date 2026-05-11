@@ -22,6 +22,7 @@ from app.services.llm_service import (
     merge_event_descriptions,
     reextract_numbers_from_description,
 )
+from app.services.notification_broker import NewEventNotification, get_broker
 from geoalchemy2.functions import ST_SetSRID, ST_MakePoint
 
 router = APIRouter()
@@ -201,7 +202,7 @@ async def _merge_into_event(
     }
 
 
-def _create_new_event(
+async def _create_new_event(
     tool_data: SubmitDisasterReportPayload,
     raw_message: str,
     db: Session,
@@ -265,6 +266,23 @@ def _create_new_event(
     db.flush()
 
     db.commit()
+
+    # 通知管理中心：新事件已建立。failure-tolerant — broker 例外不應影響通報流程。
+    try:
+        await get_broker().publish(
+            NewEventNotification(
+                event_id=str(event.id),
+                title=title,
+                disaster_type=tool_data.disaster_type,
+                severity=tool_data.severity,
+                location_text=tool_data.location_text or "",
+                occurred_at=occurred_at.isoformat(),
+            )
+        )
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception("notification publish failed (event=%s)", event.id)
+
     return {
         "status": "created",
         "event_id": str(event.id),
@@ -303,7 +321,7 @@ async def _process_tool_use(
 
     if merge_event_id is not None:
         if merge_event_id == "new":
-            return _create_new_event(tool_data, raw_message, db, coords, occurred_at)
+            return await _create_new_event(tool_data, raw_message, db, coords, occurred_at)
 
         target_event = db.get(DisasterEvent, merge_event_id)
         if target_event is None:
@@ -346,7 +364,7 @@ async def _process_tool_use(
             "geocoded_address": geocoded_address,
         }
 
-    return _create_new_event(tool_data, raw_message, db, coords, occurred_at)
+    return await _create_new_event(tool_data, raw_message, db, coords, occurred_at)
 
 
 @router.post("/chat")

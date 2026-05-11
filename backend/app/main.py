@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import auth, chat, events, health, reports, monitor
+from app.api import auth, chat, events, health, notifications, reports, monitor
 from app.config import settings
 
 
@@ -39,6 +39,7 @@ app.include_router(chat.router, prefix="/api", tags=["Chat"])
 app.include_router(events.router, prefix="/api", tags=["Events"])
 app.include_router(reports.router, prefix="/api", tags=["Reports"])
 app.include_router(monitor.router, prefix="/api", tags=["Monitor"])
+app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
 # Health/readiness 刻意不掛 /api prefix：K8s / docker-compose probe 傳統路徑慣例。
 app.include_router(health.router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

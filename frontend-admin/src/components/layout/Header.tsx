@@ -6,7 +6,7 @@ function Header() {
   const { user, logout } = useAuth();
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-blue-700 px-6 text-white">
+    <header className="relative z-[1100] flex h-14 items-center justify-between border-b bg-blue-700 px-6 text-white">
       <Link to="/" className="text-lg font-bold">
         智慧災害通報系統 — 管理中心
       </Link>

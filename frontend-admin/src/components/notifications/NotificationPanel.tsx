@@ -86,7 +86,7 @@ function NotificationPanel({ onClose }: Props) {
   };
 
   return (
-    <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border bg-white text-gray-900 shadow-xl">
+    <div className="absolute right-0 top-full z-[100] mt-2 w-80 rounded-lg border bg-white text-gray-900 shadow-xl">
       <div className="flex items-center justify-between border-b px-3 py-2">
         <span className="text-sm font-semibold">通知</span>
         <button

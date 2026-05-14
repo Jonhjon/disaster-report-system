@@ -27,6 +27,7 @@ class NewEventNotification:
     severity: int
     location_text: str
     occurred_at: str  # ISO-8601 字串，方便序列化
+    possible_duplicate_event_id: str | None = None  # Race Condition 偵測到的可能重複事件
 
 
 class NotificationBroker:

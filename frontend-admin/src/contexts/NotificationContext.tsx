@@ -20,6 +20,7 @@ export interface NotificationItem {
   occurred_at: string;
   received_at: string;
   read: boolean;
+  possible_duplicate_event_id: string | null;
 }
 
 interface NotificationContextValue {
@@ -47,6 +48,7 @@ interface RawPayload {
   severity?: unknown;
   location_text?: unknown;
   occurred_at?: unknown;
+  possible_duplicate_event_id?: unknown;
 }
 
 export function parseNotification(raw: string): NotificationItem | null {
@@ -71,6 +73,10 @@ export function parseNotification(raw: string): NotificationItem | null {
       occurred_at: data.occurred_at,
       received_at: new Date().toISOString(),
       read: false,
+      possible_duplicate_event_id:
+        typeof data.possible_duplicate_event_id === "string"
+          ? data.possible_duplicate_event_id
+          : null,
     };
   } catch {
     return null;

@@ -56,9 +56,16 @@ function NotificationRow({
         <span className="line-clamp-1 text-sm font-medium text-gray-900">
           {item.title}
         </span>
-        {!item.read && (
-          <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" />
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {item.possible_duplicate_event_id && (
+            <span className="rounded bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700">
+              ⚠ 可能重複
+            </span>
+          )}
+          {!item.read && (
+            <span className="h-2 w-2 rounded-full bg-blue-500" />
+          )}
+        </div>
       </div>
       <div className="flex w-full items-center gap-2 text-xs text-gray-600">
         <span className={`rounded px-1.5 py-0.5 ${severityClass}`}>

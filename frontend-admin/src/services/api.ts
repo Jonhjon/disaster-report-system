@@ -137,6 +137,17 @@ export async function getMapEvents(params: {
   return fetchJSON(`/events/map?${searchParams}`);
 }
 
+export async function mergeEvents(
+  targetEventId: string,
+  sourceEventId: string
+): Promise<DisasterEvent> {
+  const raw = await fetchJSON<unknown>(
+    `/events/${targetEventId}/merge-from/${sourceEventId}`,
+    { method: "POST" }
+  );
+  return parseWith(DisasterEventSchema, raw);
+}
+
 export async function getLLMLogs(): Promise<Record<string, unknown>[]> {
   return fetchJSON("/llm-logs");
 }

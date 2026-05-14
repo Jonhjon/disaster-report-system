@@ -208,6 +208,8 @@ async def _create_new_event(
     db: Session,
     coords: dict | None,
     occurred_at: datetime,
+    *,
+    description: str = "",
 ) -> dict:
     """建立全新的災情事件。"""
     location_approximate = coords is None
@@ -267,6 +269,25 @@ async def _create_new_event(
 
     db.commit()
 
+    # Post-creation dedup：偵測 Race Condition 造成的重複事件。
+    # 兩筆通報幾乎同時送出時，雙方的 dedup 查詢都看不到對方尚未 commit 的事件，
+    # 導致各自建立新事件。commit 後再查一次，若有高相似度事件則通知管理員。
+    possible_dup_event_id: str | None = None
+    try:
+        dup_candidates = await find_and_score_candidates(
+            db,
+            disaster_type=tool_data.disaster_type,
+            description=description or tool_data.description or "",
+            latitude=latitude,
+            longitude=longitude,
+            occurred_at=occurred_at,
+            exclude_id=str(event.id),
+        )
+        if dup_candidates and dup_candidates[0]["score"] > 0.80:
+            possible_dup_event_id = str(dup_candidates[0]["event"].id)
+    except Exception:  # noqa: BLE001
+        pass
+
     # 通知管理中心：新事件已建立。failure-tolerant — broker 例外不應影響通報流程。
     try:
         await get_broker().publish(
@@ -277,6 +298,7 @@ async def _create_new_event(
                 severity=tool_data.severity,
                 location_text=tool_data.location_text or "",
                 occurred_at=occurred_at.isoformat(),
+                possible_duplicate_event_id=possible_dup_event_id,
             )
         )
     except Exception:  # noqa: BLE001
@@ -288,6 +310,7 @@ async def _create_new_event(
         "event_id": str(event.id),
         "message": f"已建立新的災情事件「{title}」",
         "geocoded_address": geocoded_address,
+        "possible_duplicate_event_id": possible_dup_event_id,
     }
 
 

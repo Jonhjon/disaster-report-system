@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import EventDetail from "../components/events/EventDetail";
-import { getEvent, getEventReports, updateEvent, deleteEvent } from "../services/api";
+import { getEvent, getEventReports, updateEvent, deleteEvent, mergeEvents } from "../services/api";
 import type { DisasterEvent, DisasterReport, EventUpdateData } from "../types";
 
 function EventDetailPage() {
@@ -41,6 +41,14 @@ function EventDetailPage() {
     }
   };
 
+  const handleMergeFrom = async (sourceEventId: string) => {
+    if (!id) return;
+    const updated = await mergeEvents(id, sourceEventId);
+    setEvent(updated);
+    const reportsData = await getEventReports(id);
+    setReports(reportsData?.items ?? []);
+  };
+
   if (loading) {
     return <div className="py-12 text-center text-gray-400">載入中...</div>;
   }
@@ -66,7 +74,7 @@ function EventDetailPage() {
           ← 返回災情列表
         </Link>
       </div>
-      <EventDetail event={event} reports={reports} onUpdate={handleUpdate} onDelete={handleDelete} />
+      <EventDetail event={event} reports={reports} onUpdate={handleUpdate} onDelete={handleDelete} onMergeFrom={handleMergeFrom} />
     </div>
   );
 }

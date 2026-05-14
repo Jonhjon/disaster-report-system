@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+import { NotificationProvider } from "./contexts/NotificationContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import Header from "./components/layout/Header";
@@ -33,15 +34,17 @@ function App() {
           path="/*"
           element={
             <ProtectedRoute>
-              <AdminLayout>
-                <Routes>
-                  <Route path="/" element={<DashboardPage />} />
-                  <Route path="/events" element={<EventListPage />} />
-                  <Route path="/events/:id" element={<EventDetailPage />} />
-                  <Route path="/llm-logs" element={<LLMLogsPage />} />
-                  <Route path="/help" element={<HelpPage />} />
-                </Routes>
-              </AdminLayout>
+              <NotificationProvider>
+                <AdminLayout>
+                  <Routes>
+                    <Route path="/" element={<DashboardPage />} />
+                    <Route path="/events" element={<EventListPage />} />
+                    <Route path="/events/:id" element={<EventDetailPage />} />
+                    <Route path="/llm-logs" element={<LLMLogsPage />} />
+                    <Route path="/help" element={<HelpPage />} />
+                  </Routes>
+                </AdminLayout>
+              </NotificationProvider>
             </ProtectedRoute>
           }
         />

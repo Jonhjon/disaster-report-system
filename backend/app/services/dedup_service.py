@@ -38,6 +38,7 @@ def find_candidate_events(
     disaster_type: str,
     latitude: float,
     longitude: float,
+    exclude_id: str | None = None,
 ) -> list[DisasterEvent]:
     """Find nearby active events of the same type within the dedup window."""
     radius = DEDUP_RADIUS.get(disaster_type, 10_000)
@@ -46,7 +47,7 @@ def find_candidate_events(
 
     point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
 
-    candidates = (
+    query = (
         db.query(DisasterEvent)
         .filter(
             DisasterEvent.status == "reported",
@@ -58,6 +59,12 @@ def find_candidate_events(
                 radius,
             ),
         )
+    )
+    if exclude_id is not None:
+        query = query.filter(DisasterEvent.id != exclude_id)
+
+    candidates = (
+        query
         .order_by(
             ST_Distance(
                 cast(DisasterEvent.location, Geography),
@@ -156,6 +163,7 @@ async def find_and_score_candidates(
     latitude: float,
     longitude: float,
     occurred_at: datetime,
+    exclude_id: str | None = None,
 ) -> list[dict]:
     """回傳 score >= 0.50 的候選事件及分數，依 score 降序排列。"""
     candidates = find_candidate_events(
@@ -163,6 +171,7 @@ async def find_and_score_candidates(
         disaster_type=disaster_type,
         latitude=latitude,
         longitude=longitude,
+        exclude_id=exclude_id,
     )
 
     scored: list[dict] = []

@@ -22,6 +22,7 @@ from app.services.llm_service import (
     merge_event_descriptions,
     reextract_numbers_from_description,
 )
+from app.services.notification_broker import NewEventNotification, get_broker
 from geoalchemy2.functions import ST_SetSRID, ST_MakePoint
 
 router = APIRouter()
@@ -201,12 +202,14 @@ async def _merge_into_event(
     }
 
 
-def _create_new_event(
+async def _create_new_event(
     tool_data: SubmitDisasterReportPayload,
     raw_message: str,
     db: Session,
     coords: dict | None,
     occurred_at: datetime,
+    *,
+    description: str = "",
 ) -> dict:
     """建立全新的災情事件。"""
     location_approximate = coords is None
@@ -265,11 +268,49 @@ def _create_new_event(
     db.flush()
 
     db.commit()
+
+    # Post-creation dedup：偵測 Race Condition 造成的重複事件。
+    # 兩筆通報幾乎同時送出時，雙方的 dedup 查詢都看不到對方尚未 commit 的事件，
+    # 導致各自建立新事件。commit 後再查一次，若有高相似度事件則通知管理員。
+    possible_dup_event_id: str | None = None
+    try:
+        dup_candidates = await find_and_score_candidates(
+            db,
+            disaster_type=tool_data.disaster_type,
+            description=description or tool_data.description or "",
+            latitude=latitude,
+            longitude=longitude,
+            occurred_at=occurred_at,
+            exclude_id=str(event.id),
+        )
+        if dup_candidates and dup_candidates[0]["score"] > 0.80:
+            possible_dup_event_id = str(dup_candidates[0]["event"].id)
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 通知管理中心：新事件已建立。failure-tolerant — broker 例外不應影響通報流程。
+    try:
+        await get_broker().publish(
+            NewEventNotification(
+                event_id=str(event.id),
+                title=title,
+                disaster_type=tool_data.disaster_type,
+                severity=tool_data.severity,
+                location_text=tool_data.location_text or "",
+                occurred_at=occurred_at.isoformat(),
+                possible_duplicate_event_id=possible_dup_event_id,
+            )
+        )
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception("notification publish failed (event=%s)", event.id)
+
     return {
         "status": "created",
         "event_id": str(event.id),
         "message": f"已建立新的災情事件「{title}」",
         "geocoded_address": geocoded_address,
+        "possible_duplicate_event_id": possible_dup_event_id,
     }
 
 
@@ -303,7 +344,7 @@ async def _process_tool_use(
 
     if merge_event_id is not None:
         if merge_event_id == "new":
-            return _create_new_event(tool_data, raw_message, db, coords, occurred_at)
+            return await _create_new_event(tool_data, raw_message, db, coords, occurred_at)
 
         target_event = db.get(DisasterEvent, merge_event_id)
         if target_event is None:
@@ -346,7 +387,7 @@ async def _process_tool_use(
             "geocoded_address": geocoded_address,
         }
 
-    return _create_new_event(tool_data, raw_message, db, coords, occurred_at)
+    return await _create_new_event(tool_data, raw_message, db, coords, occurred_at)
 
 
 @router.post("/chat")

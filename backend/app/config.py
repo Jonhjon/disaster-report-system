@@ -25,11 +25,14 @@ _JWT_WEAK_KEYS = frozenset(
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/disaster_report"
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_BASE_URL: str = "https://api.banana2556.com"
+    # ANTHROPIC_BASE_URL: str = "https://api.banana2556.com"
+    ANTHROPIC_BASE_URL: str = "http://10.0.2.5:8317"
+    CLAUDE_MODEL: str = "gpt-5.4"
     # CLAUDE_MODEL: str = "claude-haiku-4-5-20251001"
-    CLAUDE_MODEL: str = "gpt-5.5"
+    # CLAUDE_MODEL: str = "gpt-5.5"
     # CLAUDE_MODEL: str = "claude-opus-4-6"
-    DEDUP_MODEL: str = "claude-sonnet-4-6"
+    # DEDUP_MODEL: str = "claude-sonnet-4-6"
+    DEDUP_MODEL: str = "gpt-5.4"
     GOOGLE_MAPS_API_KEY: str = ""
     # 無預設值：必須透過環境變數提供強隨機密鑰；不合格值由 validator 擋下
     JWT_SECRET_KEY: str = "fGRmTRoRxEQHlbIKrJtauBjrk4ufBhlA"

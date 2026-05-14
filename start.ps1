@@ -10,6 +10,63 @@ $DockerPath = 'C:\Program Files\Docker\Docker\resources\bin'
 
 Write-Host '=== 智慧災害通報系統啟動中 ===' -ForegroundColor Cyan
 
+# 0. 偵測系統是否已在執行
+$pidFile = Join-Path $ProjectDir '.running_pids'
+$alreadyRunning = $false
+$statusLines = @()
+
+if (Test-Path $pidFile) {
+    try {
+        $savedPids = Get-Content $pidFile -Raw | ConvertFrom-Json
+        $ports = @{ 8000 = '後端  '; 5173 = '民眾端'; 5174 = '管理端' }
+        $pidMap = @{ 8000 = $savedPids.BackendPID; 5173 = $savedPids.PublicPID; 5174 = $savedPids.AdminPID }
+
+        foreach ($port in $ports.Keys) {
+            $label   = $ports[$port]
+            $pid_    = $pidMap[$port]
+            $procAlive = $pid_ -and (Get-Process -Id $pid_ -ErrorAction SilentlyContinue)
+            $portUsed  = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) -ne $null
+
+            if ($procAlive -or $portUsed) {
+                $alreadyRunning = $true
+                $pidStr  = if ($pid_) { "PID: $pid_" } else { 'PID: -' }
+                $portStr = if ($portUsed) { '使用中' } else { '未偵測' }
+                $statusLines += "  $label  $pidStr  port $port`: $portStr"
+            }
+        }
+    } catch {
+        # PID 檔損毀，略過偵測
+    }
+}
+
+# 無 PID 檔時仍檢查埠是否被佔
+if (-not $alreadyRunning) {
+    foreach ($port in @(8000, 5173, 5174)) {
+        if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
+            $alreadyRunning = $true
+            $statusLines += "  port $port`: 使用中（無 PID 記錄）"
+        }
+    }
+}
+
+if ($alreadyRunning) {
+    Write-Host ''
+    Write-Host '[警告] 系統似乎已在執行中！' -ForegroundColor Yellow
+    foreach ($line in $statusLines) { Write-Host $line -ForegroundColor DarkYellow }
+    Write-Host ''
+    Write-Host '請選擇：' -ForegroundColor White
+    Write-Host '  [R] 強制重新啟動（關閉現有服務再啟動）' -ForegroundColor Cyan
+    Write-Host '  [Q] 取消（離開腳本）' -ForegroundColor Cyan
+    Write-Host ''
+    $choice = Read-Host '輸入 R 或 Q'
+    if ($choice -notmatch '^[Rr]$') {
+        Write-Host '已取消。系統繼續在背景執行中。' -ForegroundColor Green
+        exit 0
+    }
+    Write-Host ''
+    Write-Host '繼續重新啟動系統...' -ForegroundColor Yellow
+}
+
 # 1. 檢查 .env 設定
 $EnvFile = Join-Path $BackendDir '.env'
 if (Test-Path $EnvFile) {
@@ -183,7 +240,6 @@ $adminScript = "Set-Location '" + $AdminDir + "'; npm run dev"
 $adminProc = Start-Process powershell -ArgumentList '-NoExit', '-Command', $adminScript -PassThru
 
 # 儲存視窗 PID 供 stop.ps1 使用
-$pidFile = Join-Path $ProjectDir '.running_pids'
 @{
     BackendPID = $backendProc.Id
     PublicPID  = $publicProc.Id

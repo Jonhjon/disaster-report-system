@@ -59,6 +59,7 @@ describe("streamChat - candidates_selection event handling", () => {
       streamChat(
         "台北市信義路淹水",
         [],
+        [],
         vi.fn(),
         vi.fn(),
         resolve,
@@ -84,6 +85,7 @@ describe("streamChat - candidates_selection event handling", () => {
       streamChat(
         "通報測試",
         [],
+        [],
         vi.fn(),
         vi.fn(),
         resolve,
@@ -108,6 +110,7 @@ describe("streamChat - candidates_selection event handling", () => {
     await new Promise<void>((resolve) => {
       streamChat(
         "測試",
+        [],
         [],
         onText,
         vi.fn(),
@@ -153,6 +156,7 @@ describe("streamChat - candidates_selection event handling", () => {
     await new Promise<void>((resolve) => {
       streamChat(
         "測試",
+        [],
         [],
         vi.fn(),
         vi.fn(),

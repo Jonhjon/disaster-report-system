@@ -18,6 +18,14 @@ export interface DisasterEvent {
   updated_at: string;
 }
 
+export interface AttachmentOut {
+  id: string;
+  url: string;
+  original_filename: string;
+  content_type: string;
+  size_bytes: number;
+}
+
 export interface DisasterReport {
   id: string;
   event_id: string | null;
@@ -28,6 +36,7 @@ export interface DisasterReport {
   location_text: string | null;
   geocoded_address: string | null;
   created_at: string;
+  attachments: AttachmentOut[];
 }
 
 export type DisasterType =

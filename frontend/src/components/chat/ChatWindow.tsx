@@ -2,8 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import ChatMessage from "./ChatMessage";
 import ReportSummary from "./ReportSummary";
 import CandidateSelectionCard from "./CandidateSelectionCard";
+import PhotoUploader from "./PhotoUploader";
 import { streamChat } from "../../services/api";
-import type { ChatMessage as ChatMessageType, EventCandidate } from "../../types";
+import type {
+  AttachmentOut,
+  ChatMessage as ChatMessageType,
+  EventCandidate,
+} from "../../types";
 
 function ChatWindow() {
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
@@ -14,6 +19,7 @@ function ChatWindow() {
     unknown
   > | null>(null);
   const [pendingCandidates, setPendingCandidates] = useState<EventCandidate[] | null>(null);
+  const [attachments, setAttachments] = useState<AttachmentOut[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -23,6 +29,8 @@ function ChatWindow() {
 
   const sendMessage = (userMessage: string) => {
     if (!userMessage.trim() || isLoading) return;
+
+    const attachmentIds = attachments.map((a) => a.id);
 
     setInput("");
     setPendingCandidates(null);
@@ -34,6 +42,7 @@ function ChatWindow() {
     controllerRef.current = streamChat(
       userMessage,
       messages,
+      attachmentIds,
       // onText
       (text) => {
         assistantContent += text;
@@ -55,6 +64,7 @@ function ChatWindow() {
       (data) => {
         setReportResult(data);
         setPendingCandidates(null);
+        setAttachments([]);
       },
       // onDone
       () => {
@@ -124,6 +134,14 @@ function ChatWindow() {
 
       {/* Input area */}
       <div className="border-t p-3">
+        <PhotoUploader
+          attachments={attachments}
+          onAdd={(a) => setAttachments((prev) => [...prev, a])}
+          onRemove={(id) =>
+            setAttachments((prev) => prev.filter((a) => a.id !== id))
+          }
+          disabled={isLoading}
+        />
         <div className="flex gap-2">
           <textarea
             className="flex-1 resize-none rounded-lg border px-3 py-2 text-sm focus:border-red-500 focus:outline-none"

@@ -1,4 +1,5 @@
 import type {
+  AttachmentOut,
   DisasterEvent,
   DisasterReport,
   EventListResponse,
@@ -7,6 +8,14 @@ import type {
   ChatMessage,
   EventCandidate,
 } from "../types";
+
+export const ALLOWED_PHOTO_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+export const MAX_PHOTOS_PER_REPORT = 3;
 
 const BASE_URL = "/api";
 
@@ -99,10 +108,43 @@ export async function getMapEvents(params: {
   return fetchJSON(`/events/map?${searchParams}`);
 }
 
+// Uploads API
+export async function uploadPhoto(file: File): Promise<AttachmentOut> {
+  // Client-side validation：避免不必要的網路請求
+  if (!ALLOWED_PHOTO_TYPES.includes(file.type as (typeof ALLOWED_PHOTO_TYPES)[number])) {
+    throw new Error(`僅支援 JPEG / PNG / WebP（收到 ${file.type || "未知格式"}）`);
+  }
+  if (file.size > MAX_PHOTO_BYTES) {
+    throw new Error(
+      `檔案大小超過 ${Math.round(MAX_PHOTO_BYTES / 1024 / 1024)} MB 上限`,
+    );
+  }
+
+  const form = new FormData();
+  form.append("file", file);
+
+  const response = await fetch(`${BASE_URL}/uploads/photo`, {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok) {
+    let detail = `上傳失敗（${response.status}）`;
+    try {
+      const body = await response.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
 // Chat API (SSE streaming)
 export function streamChat(
   message: string,
   history: ChatMessage[],
+  attachmentIds: string[],
   onText: (text: string) => void,
   onReportSubmitted: (data: Record<string, unknown>) => void,
   onDone: () => void,
@@ -114,7 +156,7 @@ export function streamChat(
   fetch(`${BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, history, attachment_ids: attachmentIds }),
     signal: controller.signal,
   })
     .then(async (response) => {

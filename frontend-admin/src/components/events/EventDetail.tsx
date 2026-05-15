@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { DisasterEvent, DisasterReport } from "../../types";
+import type { DisasterEvent, DisasterReport, AttachmentOut } from "../../types";
+import ImageLightbox from "./ImageLightbox";
 import {
   DISASTER_TYPE_LABELS,
   SEVERITY_LABELS,
@@ -158,9 +159,18 @@ function EventDetail({ event, reports, onUpdate, onDelete, onMergeFrom }: EventD
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<AttachmentOut | null>(null);
+  const [lightboxImages, setLightboxImages] = useState<AttachmentOut[]>([]);
 
   return (
     <>
+      {lightboxImage && (
+        <ImageLightbox
+          image={lightboxImage}
+          images={lightboxImages}
+          onClose={() => setLightboxImage(null)}
+        />
+      )}
       {isMergeModalOpen && (
         <MergeModal
           targetEvent={event}
@@ -326,6 +336,27 @@ function EventDetail({ event, reports, onUpdate, onDelete, onMergeFrom }: EventD
                   )}
                 </div>
                 <p className="whitespace-pre-wrap text-sm">{report.raw_message}</p>
+                {report.attachments && report.attachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {report.attachments.map((a) => (
+                      <button
+                        key={a.id}
+                        title={a.original_filename}
+                        className="block h-20 w-20 overflow-hidden rounded border bg-gray-100 hover:opacity-80"
+                        onClick={() => {
+                          setLightboxImage(a);
+                          setLightboxImages(report.attachments ?? []);
+                        }}
+                      >
+                        <img
+                          src={a.url}
+                          alt={a.original_filename}
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {reports.length === 0 && (

@@ -31,6 +31,11 @@ class DisasterReport(Base):
     )
 
     event = relationship("DisasterEvent", back_populates="reports")
+    attachments = relationship(
+        "ReportAttachment",
+        back_populates="report",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         Index("idx_reports_event_id", "event_id"),

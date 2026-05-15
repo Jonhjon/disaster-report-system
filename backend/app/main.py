@@ -1,11 +1,28 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import auth, chat, events, health, notifications, reports, monitor
+from app.api import (
+    auth,
+    chat,
+    events,
+    health,
+    notifications,
+    reports,
+    monitor,
+    uploads,
+)
 from app.config import settings
+from app.database import SessionLocal
+from app.services.attachment_cleanup import cleanup_orphan_attachments
+
+# 孤兒附件保留窗（小時）與清理掃描間隔（秒）
+_ORPHAN_RETENTION_HOURS = 24
+_ORPHAN_SCAN_INTERVAL_SECONDS = 3600
 
 
 def _configure_logging() -> None:
@@ -24,7 +41,37 @@ def _configure_logging() -> None:
 _configure_logging()
 
 
-app = FastAPI(title="智慧災害通報系統 API", version="1.0.0")
+async def _orphan_cleanup_loop() -> None:
+    """背景任務：每小時掃描一次孤兒附件並清理。
+
+    每次失敗包 try/except，避免單次 DB / IO 例外讓 task 死掉。
+    """
+    logger = logging.getLogger(__name__)
+    while True:
+        await asyncio.sleep(_ORPHAN_SCAN_INTERVAL_SECONDS)
+        try:
+            with SessionLocal() as db:
+                cleanup_orphan_attachments(
+                    db, older_than_hours=_ORPHAN_RETENTION_HOURS
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("孤兒附件清理執行失敗（將於下次重試）")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_orphan_cleanup_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="智慧災害通報系統 API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,6 +87,7 @@ app.include_router(events.router, prefix="/api", tags=["Events"])
 app.include_router(reports.router, prefix="/api", tags=["Reports"])
 app.include_router(monitor.router, prefix="/api", tags=["Monitor"])
 app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
+app.include_router(uploads.router, prefix="/api", tags=["Uploads"])
 # Health/readiness 刻意不掛 /api prefix：K8s / docker-compose probe 傳統路徑慣例。
 app.include_router(health.router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

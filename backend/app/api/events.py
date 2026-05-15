@@ -15,7 +15,7 @@ from app.schemas.event import (
     EventResponse,
     EventUpdate,
 )
-from app.schemas.report import ReportListResponse, ReportResponse
+from app.schemas.report import ReportListResponse, serialize_report
 from app.services import event_service
 from app.services.geocoding_service import geocode_address
 from app.services.llm_service import merge_event_descriptions, reextract_numbers_from_description
@@ -187,18 +187,5 @@ async def merge_events(
 @router.get("/events/{event_id}/reports", response_model=ReportListResponse)
 def get_event_reports(event_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     reports = db.query(DisasterReport).filter(DisasterReport.event_id == event_id).all()
-    items = [
-        ReportResponse(
-            id=r.id,
-            event_id=r.event_id,
-            reporter_name=r.reporter_name,
-            reporter_phone=r.reporter_phone,
-            raw_message=r.raw_message,
-            extracted_data=r.extracted_data,
-            location_text=r.location_text,
-            geocoded_address=r.geocoded_address,
-            created_at=r.created_at,
-        )
-        for r in reports
-    ]
+    items = [serialize_report(r) for r in reports]
     return {"items": items, "total": len(items)}

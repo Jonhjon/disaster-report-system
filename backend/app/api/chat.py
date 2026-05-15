@@ -9,6 +9,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.database import get_db
 from app.models.disaster_event import DisasterEvent
 from app.models.disaster_report import DisasterReport
+from app.models.report_attachment import ReportAttachment
 from app.schemas.chat import ChatRequest
 from app.schemas.llm_tools import SubmitDisasterReportPayload
 from app.services import llm_service
@@ -116,12 +117,39 @@ def _format_dedup_candidates_hint(candidates: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _bind_attachments_to_report(
+    db: Session, attachment_ids, report_id
+) -> int:
+    """把已上傳但未綁定的 attachment 綁到目標 report。
+
+    為避免跨報告盜用（攻擊者傳別人 report 的 attachment id），
+    SQL filter 一律加上 `report_id IS NULL`；已被綁定的不會被覆蓋。
+
+    回傳實際綁定筆數。flush 由呼叫端負責。
+    """
+    if not attachment_ids:
+        return 0
+    rows = (
+        db.query(ReportAttachment)
+        .filter(
+            ReportAttachment.id.in_(attachment_ids),
+            ReportAttachment.report_id.is_(None),
+        )
+        .all()
+    )
+    for row in rows:
+        row.report_id = report_id
+    return len(rows)
+
+
 async def _merge_into_event(
     target_event: DisasterEvent,
     tool_data: SubmitDisasterReportPayload,
     raw_message: str,
     db: Session,
     coords: dict | None,
+    *,
+    attachment_ids: list | None = None,
 ) -> dict:
     """將新通報合併到指定的既有事件。"""
     geocoded_address = coords.get("display_name") if coords else None
@@ -193,6 +221,8 @@ async def _merge_into_event(
         event_id=target_event.id,
     )
     db.add(report)
+    db.flush()
+    _bind_attachments_to_report(db, attachment_ids or [], report.id)
     db.commit()
     return {
         "status": "merged",
@@ -210,6 +240,7 @@ async def _create_new_event(
     occurred_at: datetime,
     *,
     description: str = "",
+    attachment_ids: list | None = None,
 ) -> dict:
     """建立全新的災情事件。"""
     location_approximate = coords is None
@@ -267,6 +298,8 @@ async def _create_new_event(
     db.add(report)
     db.flush()
 
+    _bind_attachments_to_report(db, attachment_ids or [], report.id)
+
     db.commit()
 
     # Post-creation dedup：偵測 Race Condition 造成的重複事件。
@@ -319,6 +352,8 @@ async def _process_tool_use(
     raw_message: str,
     db: Session,
     coords: dict | None,
+    *,
+    attachment_ids: list | None = None,
 ) -> dict:
     """Process the submit_disaster_report tool call."""
     if coords:
@@ -344,7 +379,14 @@ async def _process_tool_use(
 
     if merge_event_id is not None:
         if merge_event_id == "new":
-            return await _create_new_event(tool_data, raw_message, db, coords, occurred_at)
+            return await _create_new_event(
+                tool_data,
+                raw_message,
+                db,
+                coords,
+                occurred_at,
+                attachment_ids=attachment_ids,
+            )
 
         target_event = db.get(DisasterEvent, merge_event_id)
         if target_event is None:
@@ -357,7 +399,14 @@ async def _process_tool_use(
                 "status": "error",
                 "message": f"事件「{target_event.title}」已結案，不可合併新通報。",
             }
-        return await _merge_into_event(target_event, tool_data, raw_message, db, coords)
+        return await _merge_into_event(
+            target_event,
+            tool_data,
+            raw_message,
+            db,
+            coords,
+            attachment_ids=attachment_ids,
+        )
 
     scored_candidates = await find_and_score_candidates(
         db,
@@ -387,7 +436,14 @@ async def _process_tool_use(
             "geocoded_address": geocoded_address,
         }
 
-    return await _create_new_event(tool_data, raw_message, db, coords, occurred_at)
+    return await _create_new_event(
+        tool_data,
+        raw_message,
+        db,
+        coords,
+        occurred_at,
+        attachment_ids=attachment_ids,
+    )
 
 
 @router.post("/chat")
@@ -396,6 +452,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         {"role": m.role, "content": m.content} for m in request.history
     ]
     messages = history_from_request + [{"role": "user", "content": request.message}]
+    attachment_ids = [str(aid) for aid in request.attachment_ids]
 
     raw_message = "\n".join(
         f"[{m.role}] {m.content}" for m in request.history
@@ -423,7 +480,10 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 elif dc["type"] == "tool_use":
                     dc_payload = SubmitDisasterReportPayload.model_validate(dc["data"])
                     dc_coords = await geocode_address(dc_payload.location_text)
-                    dc_result = await _process_tool_use(dc_payload, raw_message, db, dc_coords)
+                    dc_result = await _process_tool_use(
+                        dc_payload, raw_message, db, dc_coords,
+                        attachment_ids=attachment_ids,
+                    )
                     yield _sse({"type": "report_submitted", **dc_result})
                     break
                 elif dc["type"] == "done":
@@ -494,7 +554,10 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             elif cont_chunk["type"] == "tool_use":
                                 cont_payload = SubmitDisasterReportPayload.model_validate(cont_chunk["data"])
                                 cont_coords = await geocode_address(cont_payload.location_text)
-                                result = await _process_tool_use(cont_payload, raw_message, db, cont_coords)
+                                result = await _process_tool_use(
+                                    cont_payload, raw_message, db, cont_coords,
+                                    attachment_ids=attachment_ids,
+                                )
                                 if result["status"] == "needs_user_choice":
                                     async for evt in _dedup_continuation(
                                         result, cont_payload, cont_chunk["tool_use_id"],
@@ -542,7 +605,10 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             elif cont_chunk["type"] == "tool_use":
                                 cont_payload = SubmitDisasterReportPayload.model_validate(cont_chunk["data"])
                                 cont_coords = await geocode_address(cont_payload.location_text)
-                                result = await _process_tool_use(cont_payload, raw_message, db, cont_coords)
+                                result = await _process_tool_use(
+                                    cont_payload, raw_message, db, cont_coords,
+                                    attachment_ids=attachment_ids,
+                                )
                                 if result["status"] == "needs_user_choice":
                                     async for evt in _dedup_continuation(
                                         result, cont_payload, cont_chunk["tool_use_id"],
@@ -555,7 +621,10 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             elif cont_chunk["type"] == "done":
                                 yield _sse({"type": "done"})
                     else:
-                        result = await _process_tool_use(tool_payload, raw_message, db, coords)
+                        result = await _process_tool_use(
+                            tool_payload, raw_message, db, coords,
+                            attachment_ids=attachment_ids,
+                        )
 
                         if result["status"] == "needs_user_choice" and not is_continuation:
                             yield _sse(_build_candidates_selection_event(result["candidates"]))
@@ -588,6 +657,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                                     cont_coords = await geocode_address(cont_payload.location_text)
                                     cont_result = await _process_tool_use(
                                         cont_payload, raw_message, db, cont_coords,
+                                        attachment_ids=attachment_ids,
                                     )
                                     yield _sse({"type": "report_submitted", **cont_result})
                                     break

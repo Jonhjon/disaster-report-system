@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, pool
 
 from app.config import settings
 from app.database import Base
-from app.models import DisasterEvent, DisasterReport  # noqa: F401
+from app.models import DisasterEvent, DisasterReport, ReportAttachment  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

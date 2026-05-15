@@ -39,3 +39,4 @@ node_modules
 evaluation/
 tests/
 .env
+/backend/app/static/uploads/

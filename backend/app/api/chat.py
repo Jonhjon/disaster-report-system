@@ -34,6 +34,30 @@ MAX_GEOCODING_RETRIES = 3
 _MERGEABLE_EVENT_STATUSES = frozenset({"reported"})
 
 
+def _apply_verified_phone(
+    payload: SubmitDisasterReportPayload, verified_phone: str | None
+) -> SubmitDisasterReportPayload:
+    """若行動 App 已透過 Phone Number Hint 取得電話，覆寫 LLM 填入的 reporter_phone。
+
+    未提供 verified_phone 時原 payload 不變，相容既有網頁端流程。
+    """
+    if not verified_phone:
+        return payload
+    return payload.model_copy(update={"reporter_phone": verified_phone})
+
+
+def _stream_kwargs(request: ChatRequest) -> dict:
+    """組合傳給 llm_service.stream_chat 的選填關鍵字參數。"""
+    return {
+        "verified_phone": request.verified_phone,
+        "device_location": (
+            request.device_location.model_dump()
+            if request.device_location is not None
+            else None
+        ),
+    }
+
+
 def _location_is_precise(location_text: str, coords: dict | None) -> bool:
     """True when the location can be resolved to a specific building.
 
@@ -458,6 +482,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         f"[{m.role}] {m.content}" for m in request.history
     ) + f"\n[user] {request.message}"
 
+    stream_kwargs = _stream_kwargs(request)
+
     async def event_generator():
         def _sse(data: dict) -> dict:
             return {"event": "message", "data": json.dumps(data, ensure_ascii=False)}
@@ -474,11 +500,11 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                     {"type": "tool_result", "tool_use_id": tool_use_id, "content": dedup_hint}
                 ]},
             ]
-            async for dc in llm_service.stream_chat(dedup_msgs):
+            async for dc in llm_service.stream_chat(dedup_msgs, **stream_kwargs):
                 if dc["type"] == "text":
                     yield _sse(dc)
                 elif dc["type"] == "tool_use":
-                    dc_payload = SubmitDisasterReportPayload.model_validate(dc["data"])
+                    dc_payload = _apply_verified_phone(SubmitDisasterReportPayload.model_validate(dc["data"]), request.verified_phone)
                     dc_coords = await geocode_address(dc_payload.location_text)
                     dc_result = await _process_tool_use(
                         dc_payload, raw_message, db, dc_coords,
@@ -506,13 +532,13 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                 )
             )
 
-            async for chunk in llm_service.stream_chat(messages):
+            async for chunk in llm_service.stream_chat(messages, **stream_kwargs):
                 if chunk["type"] == "text":
                     collected_text += chunk["content"]
                     yield _sse(chunk)
 
                 elif chunk["type"] == "tool_use":
-                    tool_payload = SubmitDisasterReportPayload.model_validate(chunk["data"])
+                    tool_payload = _apply_verified_phone(SubmitDisasterReportPayload.model_validate(chunk["data"]), request.verified_phone)
                     tool_use_id = chunk["tool_use_id"]
 
                     location = tool_payload.location_text
@@ -548,11 +574,11 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                         ]
                         collected_text = ""
                         is_continuation = True
-                        async for cont_chunk in llm_service.stream_chat(continuation_messages):
+                        async for cont_chunk in llm_service.stream_chat(continuation_messages, **stream_kwargs):
                             if cont_chunk["type"] == "text":
                                 yield _sse(cont_chunk)
                             elif cont_chunk["type"] == "tool_use":
-                                cont_payload = SubmitDisasterReportPayload.model_validate(cont_chunk["data"])
+                                cont_payload = _apply_verified_phone(SubmitDisasterReportPayload.model_validate(cont_chunk["data"]), request.verified_phone)
                                 cont_coords = await geocode_address(cont_payload.location_text)
                                 result = await _process_tool_use(
                                     cont_payload, raw_message, db, cont_coords,
@@ -599,11 +625,11 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                         ]
                         collected_text = ""
                         is_continuation = True
-                        async for cont_chunk in llm_service.stream_chat(continuation_messages):
+                        async for cont_chunk in llm_service.stream_chat(continuation_messages, **stream_kwargs):
                             if cont_chunk["type"] == "text":
                                 yield _sse(cont_chunk)
                             elif cont_chunk["type"] == "tool_use":
-                                cont_payload = SubmitDisasterReportPayload.model_validate(cont_chunk["data"])
+                                cont_payload = _apply_verified_phone(SubmitDisasterReportPayload.model_validate(cont_chunk["data"]), request.verified_phone)
                                 cont_coords = await geocode_address(cont_payload.location_text)
                                 result = await _process_tool_use(
                                     cont_payload, raw_message, db, cont_coords,
@@ -649,11 +675,11 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                             ]
                             collected_text = ""
                             is_continuation = True
-                            async for cont_chunk in llm_service.stream_chat(continuation_messages):
+                            async for cont_chunk in llm_service.stream_chat(continuation_messages, **stream_kwargs):
                                 if cont_chunk["type"] == "text":
                                     yield _sse(cont_chunk)
                                 elif cont_chunk["type"] == "tool_use":
-                                    cont_payload = SubmitDisasterReportPayload.model_validate(cont_chunk["data"])
+                                    cont_payload = _apply_verified_phone(SubmitDisasterReportPayload.model_validate(cont_chunk["data"]), request.verified_phone)
                                     cont_coords = await geocode_address(cont_payload.location_text)
                                     cont_result = await _process_tool_use(
                                         cont_payload, raw_message, db, cont_coords,

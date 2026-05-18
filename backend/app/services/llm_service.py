@@ -203,7 +203,38 @@ async def reextract_numbers_from_description(description: str) -> dict:
         return {}
 
 
-async def stream_chat(messages: list[dict]):
+def _build_system_prompt(
+    *, verified_phone: str | None = None, device_location: dict | None = None
+) -> str:
+    """組裝 system prompt，附加當前時間、已驗證電話、裝置 GPS 等動態資訊。"""
+    tw_now = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y年%m月%d日 %H:%M")
+    system = (
+        SYSTEM_PROMPT
+        + f"\n\n## 當前時間\n現在是 {tw_now}（台灣時間）。推斷發生時間時請以此為基準。"
+    )
+    if verified_phone:
+        system += (
+            f"\n\n## 已驗證電話\n使用者裝置已透過系統選單提供電話：{verified_phone}\n"
+            "請直接以此電話填入 reporter_phone，**不要再向使用者詢問電話**。"
+        )
+    if device_location:
+        lat = device_location.get("lat")
+        lng = device_location.get("lng")
+        if lat is not None and lng is not None:
+            system += (
+                f"\n\n## 裝置 GPS 位置\n使用者目前 GPS 座標：lat={lat}, lng={lng}。\n"
+                "若使用者未提供地址或地址模糊，可參考此座標推測縣市區，"
+                "但仍需請使用者確認具體街道與門牌。"
+            )
+    return system
+
+
+async def stream_chat(
+    messages: list[dict],
+    *,
+    verified_phone: str | None = None,
+    device_location: dict | None = None,
+):
     """Stream chat response from Claude with tool use support.
 
     Yields dicts: {"type": "text", "content": str}
@@ -217,8 +248,9 @@ async def stream_chat(messages: list[dict]):
 
     claude_msgs = [{"role": m["role"], "content": m["content"]} for m in messages]
 
-    tw_now = datetime.now(ZoneInfo("Asia/Taipei")).strftime("%Y年%m月%d日 %H:%M")
-    system = SYSTEM_PROMPT + f"\n\n## 當前時間\n現在是 {tw_now}（台灣時間）。推斷發生時間時請以此為基準。"
+    system = _build_system_prompt(
+        verified_phone=verified_phone, device_location=device_location
+    )
 
     start_time = time.time()
     tool_name = None

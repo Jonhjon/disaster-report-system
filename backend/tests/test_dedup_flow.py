@@ -145,7 +145,7 @@ class TestDedupAfterGeocodeDisambiguation:
 
         stream_call_count = [0]
 
-        async def mock_stream_chat(messages):
+        async def mock_stream_chat(messages, **_kwargs):
             stream_call_count[0] += 1
             if stream_call_count[0] == 1:
                 yield {"type": "text", "content": "請確認是哪個分店"}
@@ -233,7 +233,7 @@ class TestDedupAfterGeocodeDisambiguation:
 
         stream_call_count = [0]
 
-        async def mock_stream_chat(messages):
+        async def mock_stream_chat(messages, **_kwargs):
             stream_call_count[0] += 1
             if stream_call_count[0] == 1:
                 yield {"type": "tool_use", "tool": "submit_disaster_report",
@@ -307,7 +307,7 @@ class TestDedupAfterPrecisionClarification:
 
         stream_call_count = [0]
 
-        async def mock_stream_chat(messages):
+        async def mock_stream_chat(messages, **_kwargs):
             stream_call_count[0] += 1
             if stream_call_count[0] == 1:
                 yield {"type": "text", "content": "請提供更精確的地址"}
@@ -390,7 +390,7 @@ class TestDedupHappyPath:
         dedup_candidates = _dedup_candidates_for(existing_event)
         tool_data = _make_fire_tool_data("花蓮市中山路57號花蓮縣餅前站")
 
-        async def mock_stream_chat(messages):
+        async def mock_stream_chat(messages, **_kwargs):
             yield {"type": "text", "content": "確認地址"}
             yield {
                 "type": "tool_use",

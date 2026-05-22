@@ -7,8 +7,10 @@ import {
   STATUS_LABELS,
 } from "../../types";
 import EventEditForm from "./EventEditForm";
+import ChatMessageView from "../chat/ChatMessageView";
 import { getEvents } from "../../services/api";
 import { formatBytes } from "../../utils/format";
+import { parseRawMessage } from "../../utils/parseRawMessage";
 
 interface EventDetailProps {
   event: DisasterEvent;
@@ -339,7 +341,21 @@ function EventDetail({ event, reports, onUpdate, onDelete, onMergeFrom }: EventD
                     <span>電話：{report.reporter_phone}</span>
                   )}
                 </div>
-                <p className="whitespace-pre-wrap text-sm">{report.raw_message}</p>
+                {(() => {
+                  const messages = parseRawMessage(report.raw_message);
+                  if (messages.length === 0) {
+                    return (
+                      <p className="whitespace-pre-wrap text-sm">{report.raw_message}</p>
+                    );
+                  }
+                  return (
+                    <div className="space-y-1">
+                      {messages.map((m, i) => (
+                        <ChatMessageView key={i} message={m} />
+                      ))}
+                    </div>
+                  );
+                })()}
                 {report.attachments && report.attachments.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {report.attachments.map((a) => (

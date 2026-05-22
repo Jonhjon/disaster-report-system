@@ -266,7 +266,7 @@ def _parse_sse(response_text: str) -> list[dict]:
 
 def _make_stream(*chunks):
     """建立一個每次呼叫都回傳新 async generator 的函式。"""
-    async def _gen(_messages):
+    async def _gen(_messages, **_kwargs):
         for chunk in chunks:
             yield chunk
     return _gen
@@ -276,7 +276,7 @@ def _sequential_streams(*stream_factories):
     """按呼叫順序依序回傳不同的 async generator（用於多輪 LLM 呼叫模擬）。"""
     call_idx = {"n": 0}
 
-    def _dispatch(messages):
+    def _dispatch(messages, **_kwargs):
         idx = call_idx["n"]
         call_idx["n"] += 1
         if idx < len(stream_factories):
@@ -452,7 +452,7 @@ def test_followup_reason_differs_by_failure_type(client):
     """
     captured_messages = []
 
-    def capturing_dispatch(messages):
+    def capturing_dispatch(messages, **_kwargs):
         captured_messages.append(messages)
         if len(captured_messages) == 1:
             return _make_stream(
@@ -479,7 +479,7 @@ def test_followup_reason_differs_by_failure_type(client):
     captured_messages.clear()
     imprecise_data = {**_BASE_TOOL_DATA, "location_text": "花蓮縣"}
 
-    def capturing_dispatch_imprecise(messages):
+    def capturing_dispatch_imprecise(messages, **_kwargs):
         captured_messages.append(messages)
         if len(captured_messages) == 1:
             return _make_stream(

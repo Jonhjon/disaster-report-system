@@ -27,7 +27,7 @@ class PhoneNumberHintModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun requestPhoneNumber(promise: Promise) {
-        val activity = currentActivity
+        val activity = reactApplicationContext.currentActivity
         if (activity == null) {
             promise.reject(ERR_NO_ACTIVITY, "目前無 Activity，無法呼叫 Phone Number Hint")
             return
@@ -60,13 +60,13 @@ class PhoneNumberHintModule(reactContext: ReactApplicationContext) :
     }
 
     override fun onActivityResult(
-        activity: Activity?,
+        activity: Activity,
         requestCode: Int,
         resultCode: Int,
         data: Intent?,
     ) {
         if (requestCode != REQUEST_CODE) return
-        if (resultCode != Activity.RESULT_OK || data == null || activity == null) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
             resolveCanceled(reason = "user_canceled")
             return
         }
@@ -83,7 +83,7 @@ class PhoneNumberHintModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         // No-op: Phone Hint flow uses startIntentSenderForResult.
     }
 

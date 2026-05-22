@@ -1,5 +1,11 @@
 function ReportSummary({ result }: { result: Record<string, unknown> }) {
   const isNew = result.status === "created";
+  const geocoded = result.geocoded_address
+    ? String(result.geocoded_address)
+    : null;
+  const possibleDup = result.possible_duplicate_event_id
+    ? String(result.possible_duplicate_event_id)
+    : null;
 
   return (
     <div
@@ -16,6 +22,14 @@ function ReportSummary({ result }: { result: Record<string, unknown> }) {
         </span>
       </div>
       <p className="text-sm text-gray-700">{result.message as string}</p>
+      {geocoded && (
+        <p className="mt-2 text-xs text-gray-600">地點：{geocoded}</p>
+      )}
+      {possibleDup && (
+        <p className="mt-1 text-xs text-amber-700">
+          ⚠ 系統偵測到可能與另一筆通報重複
+        </p>
+      )}
     </div>
   );
 }

@@ -119,6 +119,15 @@ android {
     }
 }
 
+// Pin play-services-location to 20.0.0 (last version where FusedLocationProviderClient
+// was still a class). 21.0.0+ made it an interface, breaking
+// react-native-geolocation-service 5.3.1 with IncompatibleClassChangeError at runtime.
+configurations.all {
+    resolutionStrategy {
+        force "com.google.android.gms:play-services-location:20.0.0"
+    }
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")

@@ -56,8 +56,17 @@ export function MapScreen() {
         style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={initialRegion}
-        showsUserLocation
       >
+        {deviceLocation && (
+          <Marker
+            coordinate={{
+              latitude: deviceLocation.lat,
+              longitude: deviceLocation.lng,
+            }}
+            title="我的位置"
+            pinColor="#2563eb"
+          />
+        )}
         {events.map(e => (
           <Marker
             key={e.id}

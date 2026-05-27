@@ -242,6 +242,7 @@ async def _merge_into_event(
         extracted_data=tool_data.model_dump(),
         location=point,
         location_text=tool_data.location_text,
+        geocoded_address=geocoded_address,
         event_id=target_event.id,
     )
     db.add(report)
@@ -317,6 +318,7 @@ async def _create_new_event(
         extracted_data=tool_data.model_dump(),
         location=point,
         location_text=tool_data.location_text,
+        geocoded_address=geocoded_address,
         event_id=event.id,
     )
     db.add(report)

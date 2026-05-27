@@ -7,7 +7,10 @@ import {
   STATUS_LABELS,
 } from "../../types";
 import EventEditForm from "./EventEditForm";
+import ChatMessageView from "../chat/ChatMessageView";
 import { getEvents } from "../../services/api";
+import { formatBytes } from "../../utils/format";
+import { parseRawMessage } from "../../utils/parseRawMessage";
 
 interface EventDetailProps {
   event: DisasterEvent;
@@ -327,22 +330,39 @@ function EventDetail({ event, reports, onUpdate, onDelete, onMergeFrom }: EventD
           <div className="space-y-3">
             {reports.map((report) => (
               <div key={report.id} className="rounded border p-3">
-                <div className="mb-1 flex items-center gap-2 text-xs text-gray-500">
+                <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                   <span>
                     {new Date(report.created_at).toLocaleString("zh-TW")}
                   </span>
                   {report.reporter_name && (
                     <span>通報者：{report.reporter_name}</span>
                   )}
+                  {report.reporter_phone && (
+                    <span>電話：{report.reporter_phone}</span>
+                  )}
                 </div>
-                <p className="whitespace-pre-wrap text-sm">{report.raw_message}</p>
+                {(() => {
+                  const messages = parseRawMessage(report.raw_message);
+                  if (messages.length === 0) {
+                    return (
+                      <p className="whitespace-pre-wrap text-sm">{report.raw_message}</p>
+                    );
+                  }
+                  return (
+                    <div className="space-y-1">
+                      {messages.map((m, i) => (
+                        <ChatMessageView key={i} message={m} />
+                      ))}
+                    </div>
+                  );
+                })()}
                 {report.attachments && report.attachments.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {report.attachments.map((a) => (
                       <button
                         key={a.id}
-                        title={a.original_filename}
-                        className="block h-20 w-20 overflow-hidden rounded border bg-gray-100 hover:opacity-80"
+                        title={`${a.original_filename}（${formatBytes(a.size_bytes)}）`}
+                        className="block w-20 overflow-hidden rounded border bg-gray-100 text-left hover:opacity-80"
                         onClick={() => {
                           setLightboxImage(a);
                           setLightboxImages(report.attachments ?? []);
@@ -351,11 +371,22 @@ function EventDetail({ event, reports, onUpdate, onDelete, onMergeFrom }: EventD
                         <img
                           src={a.url}
                           alt={a.original_filename}
-                          className="h-full w-full object-cover"
+                          className="h-20 w-20 object-cover"
                         />
+                        <span className="block truncate px-1 py-0.5 text-[10px] text-gray-500">
+                          {formatBytes(a.size_bytes)}
+                        </span>
                       </button>
                     ))}
                   </div>
+                )}
+                {report.extracted_data && Object.keys(report.extracted_data).length > 0 && (
+                  <details className="mt-2 text-xs">
+                    <summary className="cursor-pointer text-gray-500">AI 提取欄位</summary>
+                    <pre className="mt-1 overflow-x-auto rounded bg-gray-50 p-2 text-[10px]">
+                      {JSON.stringify(report.extracted_data, null, 2)}
+                    </pre>
+                  </details>
                 )}
               </div>
             ))}

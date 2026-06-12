@@ -40,3 +40,4 @@ evaluation/
 tests/
 .env
 /backend/app/static/uploads/
+backend/.env.test

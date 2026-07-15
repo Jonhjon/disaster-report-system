@@ -12,7 +12,11 @@ import json
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.api.chat import _location_hint, _location_is_precise
+from app.api.chat import (
+    _location_hint,
+    _location_is_precise,
+    _location_text_is_precise,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -553,3 +557,54 @@ def test_user_supplements_location_creates_report(client):
 
     assert len(submitted) == 1
     assert submitted[0].get("event_id") == "event-supplement-test"
+
+
+# ---------------------------------------------------------------------------
+# Section D: _location_text_is_precise 純文字判斷（B3）
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,expected", [
+    ("台北市信義區松仁路100號商辦大樓", True),   # 含泛稱建物尾綴仍精確
+    ("台北市信義區松仁路 100 號", True),
+    ("花蓮縣花蓮市中央路三段45號", True),
+    ("台北市信義區松仁路", False),                # 缺號
+    ("新竹市", False),                            # 只有縣市
+    ("松仁路100號", False),                       # 缺縣市
+    ("某個地方", False),                          # 純口語
+])
+def test_location_text_is_precise(text, expected):
+    assert _location_text_is_precise(text) is expected
+
+
+def test_precise_text_precise_even_without_coords():
+    """文字完整（縣市+路+號）即使 coords=None 仍判精確（B3 核心）。"""
+    assert _location_is_precise("台北市信義區松仁路100號商辦大樓", None) is True
+
+
+# ── D-1: 文字已精確但 geocoding 失敗 → 直接建立通報，不再追問（B3 行為）──────
+
+def test_precise_text_geocode_fail_creates_report(client):
+    """
+    地址文字已達縣市+路+號，但 geocode_address 回傳 None（geocoder 查不到）。
+    B3：不應退回追問，而是直接接受並建立通報（coords=None → location_approximate）。
+    """
+    precise_data = {**_BASE_TOOL_DATA, "location_text": "台北市信義區松仁路100號商辦大樓"}
+
+    dispatch = _make_stream(
+        {"type": "tool_use", "data": precise_data, "tool_use_id": "tu_d1"},
+        {"type": "done"},
+    )
+
+    with patch("app.api.chat.geocode_address", new=AsyncMock(return_value=None)), \
+         patch("app.api.chat.llm_service.stream_chat", side_effect=dispatch), \
+         patch("app.api.chat._process_tool_use", new=AsyncMock(return_value=_FAKE_PROCESS_RESULT)):
+        response = client.post("/api/chat", json={
+            "message": "台北市信義區松仁路100號商辦大樓電梯故障",
+            "history": [],
+        })
+
+    events = _parse_sse(response.text)
+    submitted = [e for e in events if e.get("type") == "report_submitted"]
+
+    assert len(submitted) == 1, "文字已精確時 geocoding 失敗仍應直接建立通報，不再追問"
+    assert submitted[0].get("status") == "created"

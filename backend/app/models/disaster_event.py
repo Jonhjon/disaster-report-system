@@ -29,6 +29,7 @@ class DisasterEvent(Base):
     status: Mapped[str] = mapped_column(String(20), default="reported")
     report_count: Mapped[int] = mapped_column(Integer, default=1)
     location_approximate: Mapped[bool] = mapped_column(Boolean, default=False)
+    occurred_at_approximate: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

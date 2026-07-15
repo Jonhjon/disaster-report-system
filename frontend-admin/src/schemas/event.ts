@@ -34,6 +34,7 @@ export const DisasterEventSchema = z.object({
   status: EventStatusSchema,
   report_count: z.number(),
   location_approximate: z.boolean(),
+  occurred_at_approximate: z.boolean(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -49,6 +50,7 @@ export const EventMapItemSchema = z.object({
   report_count: z.number(),
   occurred_at: z.string(),
   location_approximate: z.boolean(),
+  occurred_at_approximate: z.boolean(),
 });
 
 export const EventListResponseSchema = z.object({

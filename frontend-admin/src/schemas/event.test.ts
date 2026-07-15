@@ -21,6 +21,7 @@ const validEvent = {
   status: "reported",
   report_count: 1,
   location_approximate: false,
+  occurred_at_approximate: false,
   created_at: "2026-04-20T10:00:00Z",
   updated_at: "2026-04-20T10:00:00Z",
 };
@@ -61,8 +62,25 @@ describe("EventMapItemSchema", () => {
       report_count: 1,
       occurred_at: "2026-04-20T10:00:00Z",
       location_approximate: false,
+      occurred_at_approximate: false,
     };
     expect(() => EventMapItemSchema.parse(item)).not.toThrow();
+  });
+
+  it("throws when occurred_at_approximate missing", () => {
+    const item = {
+      id: "abc",
+      title: "淹水",
+      disaster_type: "flooding",
+      severity: 2,
+      latitude: 25.0,
+      longitude: 121.5,
+      status: "reported",
+      report_count: 1,
+      occurred_at: "2026-04-20T10:00:00Z",
+      location_approximate: false,
+    };
+    expect(() => EventMapItemSchema.parse(item)).toThrow();
   });
 });
 

@@ -3,9 +3,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-
 import anthropic
-
 logger = logging.getLogger(__name__)
 
 from app.config import settings
@@ -27,14 +25,17 @@ SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你
 ## 你需要收集的資訊
 1. **災情種類**（必要）：人員受困、路段崩塌、淹水、小型土石流、建物受損、管線/電力受損、火警、其他
 2. **災情地點**（必要）：盡量引導到具體地址、路名或知名地標
-3. **嚴重程度**（必要）：1=輕微, 2=中等, 3=嚴重, 4=非常嚴重, 5=極嚴重
-4. **發生時間**（必要）：什麼時候發生的，若民眾不確定請追問，確認無法提供後才可省略
-5. **傷亡狀況**（必要）：死亡（casualties）、受傷（injured）、受困（trapped）人數
+3. **發生時間**（必要）：什麼時候發生的，若民眾不確定請追問，確認無法提供後才可省略
+4. **傷亡狀況**（必要）：死亡（casualties）、受傷（injured）、受困（trapped）人數
    - 受傷（injured）：有身體傷害的人員，含正在等待救護車的燒傷／受傷者
    - 受困（trapped）：無法自行脫離現場、需要搜救的人員（如被瓦礫壓住、受困電梯）
    - 「等待救援／救護」不等於受困，應計入 injured
-6. **詳細描述**：災情現場狀況
-7. **聯絡方式**（必要）：通報者姓名（reporter_name）與電話（reporter_phone）
+   - 若使用者描述「N 人輕傷、M 人中度受傷、K 人重傷」等分組傷者，必須將各組
+     加總後填入 injured（N+M 或 N+M+K），不是只填某一組或塞到 description。
+5. **詳細描述**：災情現場狀況
+6. **聯絡方式**（必要）：通報者姓名（reporter_name）與電話（reporter_phone）
+
+**嚴重程度（severity）由你依下方判斷規則自行決定，不要詢問使用者。**
 
 ## 對話策略
 - 先確認民眾安全
@@ -42,19 +43,28 @@ SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你
 - 如果資訊不足，逐步追問，但不要過於繁瑣
 - 提交通報前，若尚未取得發生時間，必須先追問一次；若民眾明確表示不知道或無法回答，才可省略
 - 提交通報前必須已取得**通報者姓名與電話**
-- 詢問嚴重程度時，必須在問題中列出各級說明（1–5 級的描述），讓民眾能自行對應
-- 至少收集到災情種類、地點、嚴重程度，且已詢問過發生時間後，才可提交通報
+- **絕對不要詢問使用者嚴重程度**。即使使用者主動提及，也以下方判斷規則為準，由你自行決定 1~5 的整數
+- 至少收集到災情種類、地點，且已詢問過發生時間後，才可提交通報
 - 收集到足夠資訊後，呼叫 submit_disaster_report 工具提交通報
 - 如果系統回傳相似事件清單要求使用者選擇，請以自然語言列出各候選事件（含標題、通報數、距離），並詢問使用者要合併到哪個事件或建立新事件。使用者選擇後，再次呼叫 submit_disaster_report 並填入 merge_event_id（事件 UUID 或 'new'）
 - 提交後告知民眾通報已成功
 - 只根據使用者明確說明的內容填寫傷亡數字；若使用者未回答某個問題，該欄位填 0，不可從模糊措辭或未回答的問題中自行推斷
+- 當使用者已提供主要災情資訊（地點、類型、時間、聯絡方式）但未明說「死亡 /受困」人數時，視為 0，直接提交。不要因為「想再確認」而反覆追問。
 
-## 嚴重程度參考
-- 1 輕微：小範圍影響，無人傷亡
-- 2 中等：局部區域受影響，少數人需疏散
-- 3 嚴重：較大範圍影響，有人受傷
-- 4 非常嚴重：大範圍影響，多人傷亡
-- 5 極嚴重：重大災害，大量傷亡或基礎設施嚴重損毀"""
+## 嚴重程度判斷規則（你自行決定，不要詢問使用者）
+依據行政院《災害緊急通報作業規定》附表二（甲乙丙級通報門檻）外推：
+- 定義「死傷合計」= 死亡（casualties）+ 受傷（injured）+ 受困（trapped）
+- 兩個維度（死亡、死傷合計）分別算出可達級別，取**較高**那一級
+
+| severity | 對應    | 死亡 ≥ | 死傷合計 ≥ |
+|----------|---------|--------|------------|
+| 5        | 甲級     | 10     | 30         |
+| 4        | 中間值   | 6      | 20         |
+| 3        | 乙級     | 3      | 10         |
+| 2        | 中間值   | 1      | 5          |
+| 1        | 丙級或以下 | (預設) | (預設)    |
+
+下限規則：若災害類型為小型局部事件（小型土石流、單戶火警）且無傷亡無受困，維持 severity = 1。"""
 
 SUBMIT_TOOL = {
     "name": "submit_disaster_report",
@@ -70,7 +80,7 @@ SUBMIT_TOOL = {
             },
             "description":    {"type": "string", "description": "災情詳細描述"},
             "location_text":  {"type": "string", "description": "地點的文字描述（必須為具體地址、路名或知名地標，不可只填縣市名稱）"},
-            "severity":       {"type": "integer", "minimum": 1, "maximum": 5},
+            "severity":       {"type": "integer", "minimum": 1, "maximum": 5, "description": "嚴重程度，由 AI 依系統提示中的判斷規則推斷，不可詢問使用者"},
             "casualties":     {"type": "integer", "minimum": 0},
             "injured":        {"type": "integer", "minimum": 0},
             "trapped":        {"type": "integer", "minimum": 0, "description": "受困人數：無法自行脫離現場、需要搜救的人員（如被瓦礫壓住、受困電梯）。等待救護車的傷者應計入 injured，不應計入 trapped"},
@@ -234,6 +244,7 @@ async def stream_chat(
     *,
     verified_phone: str | None = None,
     device_location: dict | None = None,
+    temperature: float | None = None,
 ):
     """Stream chat response from Claude with tool use support.
 
@@ -263,14 +274,18 @@ async def stream_chat(
     in_thinking_block = False
     thinking_state: dict = {"in_thinking": False}
 
+    stream_kwargs: dict = {
+        "model": settings.CLAUDE_MODEL,
+        "max_tokens": 1024,
+        "system": system,
+        "messages": claude_msgs,
+        "tools": [SUBMIT_TOOL],
+    }
+    if temperature is not None:
+        stream_kwargs["temperature"] = temperature
+
     try:
-        async with client.messages.stream(
-            model=settings.CLAUDE_MODEL,
-            max_tokens=1024,
-            system=system,
-            messages=claude_msgs,
-            tools=[SUBMIT_TOOL],
-        ) as stream:
+        async with client.messages.stream(**stream_kwargs) as stream:
             async for event in stream:
                 if event.type == "content_block_start":
                     if event.content_block.type == "tool_use":

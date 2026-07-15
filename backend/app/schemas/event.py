@@ -23,6 +23,7 @@ class EventResponse(EventBase):
     id: UUID
     report_count: int
     location_approximate: bool = False
+    occurred_at_approximate: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -68,6 +69,7 @@ class EventMapItem(BaseModel):
     report_count: int
     occurred_at: datetime
     location_approximate: bool = False
+    occurred_at_approximate: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -35,6 +35,7 @@ def _make_mock_event(
     casualties=0,
     injured=3,
     trapped=0,
+    occurred_at_approximate=False,
 ):
     event = MagicMock()
     event.id = event_id or uuid.uuid4()
@@ -49,6 +50,7 @@ def _make_mock_event(
     event.injured = injured
     event.trapped = trapped
     event.occurred_at = datetime.now(timezone.utc)
+    event.occurred_at_approximate = occurred_at_approximate
     event.updated_at = datetime.now(timezone.utc)
     return event
 
@@ -843,6 +845,70 @@ class TestMergeEdgeCases:
 
         assert result["status"] == "merged"
         assert result["event_id"] == str(target_id)
+
+    @pytest.mark.asyncio
+    async def test_approximate_time_replaced_by_precise_incoming(self):
+        """舊事件時間為系統補的估算值，新通報帶明確時間 → 覆寫 occurred_at 並清旗標。"""
+        from app.api.chat import _process_tool_use
+
+        target = _make_mock_event(occurred_at_approximate=True)
+        original_time = target.occurred_at
+        mock_db = _make_mock_db()
+        mock_db.get.return_value = target
+
+        precise_iso = "2026-07-15T09:30:00+08:00"
+        tool_data = _merge_tool_data(target.id, occurred_at=precise_iso)
+
+        with (
+            patch(
+                "app.api.chat.merge_event_descriptions",
+                new_callable=AsyncMock,
+                return_value="描述",
+            ),
+            patch(
+                "app.api.chat.reextract_numbers_from_description",
+                new_callable=AsyncMock,
+                return_value={"injured": 3},
+            ),
+        ):
+            result = await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
+
+        assert result["status"] == "merged"
+        assert target.occurred_at_approximate is False
+        assert target.occurred_at != original_time
+        assert target.occurred_at == datetime.fromisoformat(precise_iso)
+
+    @pytest.mark.asyncio
+    async def test_precise_time_not_overwritten_by_approximate_incoming(self):
+        """舊事件已有明確時間 → 即便新通報無時間（approximate=True），不應覆寫。"""
+        from app.api.chat import _process_tool_use
+
+        target = _make_mock_event(occurred_at_approximate=False)
+        original_time = target.occurred_at
+        mock_db = _make_mock_db()
+        mock_db.get.return_value = target
+
+        # 移除 occurred_at → LLM 未取得時間，將 fallback 為 now() 並標記 approximate
+        tool_data = _merge_tool_data(target.id)
+        tool_data = tool_data.model_copy(update={"occurred_at": None})
+
+        with (
+            patch(
+                "app.api.chat.merge_event_descriptions",
+                new_callable=AsyncMock,
+                return_value="描述",
+            ),
+            patch(
+                "app.api.chat.reextract_numbers_from_description",
+                new_callable=AsyncMock,
+                return_value={"injured": 3},
+            ),
+        ):
+            result = await _process_tool_use(tool_data, "原始訊息", mock_db, _base_coords())
+
+        assert result["status"] == "merged"
+        assert target.occurred_at_approximate is False
+        assert target.occurred_at == original_time
 
     @pytest.mark.asyncio
     async def test_reextract_called_with_merged_description(self):

@@ -30,6 +30,7 @@ def _event_to_response(event: DisasterEvent) -> EventResponse:
         status=event.status,
         report_count=event.report_count,
         location_approximate=event.location_approximate,
+        occurred_at_approximate=event.occurred_at_approximate,
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
@@ -202,6 +203,7 @@ def get_map_events(
                 "report_count": event.report_count,
                 "occurred_at": event.occurred_at,
                 "location_approximate": event.location_approximate,
+                "occurred_at_approximate": event.occurred_at_approximate,
             }
         )
     return items
@@ -242,4 +244,5 @@ def update_event_location(
         report_count=event.report_count,
         occurred_at=event.occurred_at,
         location_approximate=False,
+        occurred_at_approximate=event.occurred_at_approximate,
     )

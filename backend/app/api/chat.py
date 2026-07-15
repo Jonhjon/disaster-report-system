@@ -55,7 +55,20 @@ def _stream_kwargs(request: ChatRequest) -> dict:
             if request.device_location is not None
             else None
         ),
+        "temperature": request.temperature,
     }
+
+
+def _location_text_is_precise(location_text: str) -> bool:
+    """純文字精確度判斷：location_text 是否同時含 縣市 + 路 + 門牌號。
+
+    不依賴 geocoding 結果，供「地址文字已完整」的判斷使用。
+    """
+    text = location_text
+    has_county = any(w in text for w in ["縣", "市"])
+    has_road   = any(w in text for w in ["路", "街", "大道", "巷", "弄", "道"])
+    has_number = "號" in text
+    return has_county and has_road and has_number
 
 
 def _location_is_precise(location_text: str, coords: dict | None) -> bool:
@@ -67,11 +80,7 @@ def _location_is_precise(location_text: str, coords: dict | None) -> bool:
     """
     if coords and coords.get("source") == "google_places":
         return True
-    text = location_text
-    has_county = any(w in text for w in ["縣", "市"])
-    has_road   = any(w in text for w in ["路", "街", "大道", "巷", "弄", "道"])
-    has_number = "號" in text
-    return has_county and has_road and has_number
+    return _location_text_is_precise(location_text)
 
 
 def _location_hint(location_text: str) -> str:
@@ -172,6 +181,8 @@ async def _merge_into_event(
     raw_message: str,
     db: Session,
     coords: dict | None,
+    occurred_at: datetime,
+    occurred_at_approximate: bool,
     *,
     attachment_ids: list | None = None,
 ) -> dict:
@@ -233,6 +244,11 @@ async def _merge_into_event(
         ):
             target_event.location_text = new_loc
 
+    # 新通報帶明確時間、舊事件是估算 → 覆寫並清旗標
+    if not occurred_at_approximate and target_event.occurred_at_approximate:
+        target_event.occurred_at = occurred_at
+        target_event.occurred_at_approximate = False
+
     target_event.updated_at = datetime.now(timezone.utc)
 
     report = DisasterReport(
@@ -263,6 +279,7 @@ async def _create_new_event(
     db: Session,
     coords: dict | None,
     occurred_at: datetime,
+    occurred_at_approximate: bool,
     *,
     description: str = "",
     attachment_ids: list | None = None,
@@ -306,6 +323,7 @@ async def _create_new_event(
         injured=tool_data.injured,
         trapped=tool_data.trapped,
         location_approximate=location_approximate,
+        occurred_at_approximate=occurred_at_approximate,
         status="reported",
     )
     db.add(event)
@@ -396,10 +414,13 @@ async def _process_tool_use(
             occurred_at = datetime.fromisoformat(tool_data.occurred_at)
             if occurred_at.tzinfo is None:
                 occurred_at = occurred_at.replace(tzinfo=ZoneInfo("Asia/Taipei"))
+            occurred_at_approximate = False
         except ValueError:
             occurred_at = datetime.now(timezone.utc)
+            occurred_at_approximate = True
     else:
         occurred_at = datetime.now(timezone.utc)
+        occurred_at_approximate = True
 
     merge_event_id = tool_data.merge_event_id
 
@@ -411,6 +432,7 @@ async def _process_tool_use(
                 db,
                 coords,
                 occurred_at,
+                occurred_at_approximate,
                 attachment_ids=attachment_ids,
             )
 
@@ -431,6 +453,8 @@ async def _process_tool_use(
             raw_message,
             db,
             coords,
+            occurred_at,
+            occurred_at_approximate,
             attachment_ids=attachment_ids,
         )
 
@@ -468,6 +492,7 @@ async def _process_tool_use(
         db,
         coords,
         occurred_at,
+        occurred_at_approximate,
         attachment_ids=attachment_ids,
     )
 
@@ -597,7 +622,10 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
                                 break
                             elif cont_chunk["type"] == "done":
                                 yield _sse({"type": "done"})
-                    elif (not geocoding_ok or not location_precise) and not is_continuation and failed_attempts < MAX_GEOCODING_RETRIES:
+                    # 只有當「地址本身不夠精確」（缺 縣市/路/號，且非 Google Places 命中的具名場所）
+                    # 才追問。地址文字已完整（縣市+路+號）但 geocoder 查不到座標時，不再退回重問，
+                    # 直接接受並由 _process_tool_use 依 coords is None 標記 location_approximate=True。
+                    elif not location_precise and not is_continuation and failed_attempts < MAX_GEOCODING_RETRIES:
                         assistant_content = []
                         if collected_text:
                             assistant_content.append({"type": "text", "text": collected_text})
@@ -713,5 +741,13 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
             else:
                 friendly = f"AI 服務發生錯誤，請稍後再試。（{error_msg[:120]}）"
             yield _sse({"type": "error", "message": friendly})
+        finally:
+            # 不論成功、例外、或 CancelledError（client 中斷），確保 DB transaction 被釋放，
+            # 避免 SQLAlchemy session 的隱式 SELECT transaction 留在 "idle in transaction" 狀態
+            # 鎖死後續的 TRUNCATE / 查詢（壓測時實際發生過）。
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
     return EventSourceResponse(event_generator(), ping=15)

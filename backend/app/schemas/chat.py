@@ -30,3 +30,6 @@ class ChatRequest(BaseModel):
     verified_phone: str | None = Field(default=None, max_length=32)
     # 行動 App 取得的 GPS 位置（選填）。
     device_location: DeviceLocation | None = None
+    # 測試專用：覆寫 LLM temperature（0.0~2.0）。正式環境 frontend 不傳。
+    # 若為 None，沿用 Anthropic SDK 預設。
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)

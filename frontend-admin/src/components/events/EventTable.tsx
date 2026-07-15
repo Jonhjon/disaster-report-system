@@ -75,6 +75,14 @@ function EventTable({ events, page, totalPages, onPageChange }: EventTableProps)
               <td className="px-4 py-3">{event.report_count}</td>
               <td className="px-4 py-3 text-gray-600">
                 {new Date(event.occurred_at).toLocaleString("zh-TW")}
+                {event.occurred_at_approximate && (
+                  <span
+                    className="ml-1 text-yellow-700"
+                    title="使用者未提供時間，此為系統推斷"
+                  >
+                    ⚠
+                  </span>
+                )}
               </td>
               <td className="px-4 py-3">
                 <Link

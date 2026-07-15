@@ -14,7 +14,9 @@ from app.services.geocoding_service import (
     _extract_landmark_pattern,
     _haversine_m,
     _in_taiwan,
+    _normalize_address,
     _strip_place_suffix,
+    _unique,
     geocode_address,
     geocode_google_places,
     geocode_nearby_candidates,
@@ -1060,3 +1062,122 @@ def test_haversine_known_distance():
     """台北→花蓮約 120km"""
     dist = _haversine_m(25.033, 121.565, 23.975, 121.605)
     assert 115_000 < dist < 125_000
+
+
+# ---------------------------------------------------------------------------
+# N. _normalize_address 單元測試（B1 地址正規化）
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,expected", [
+    # 泛稱建物後綴 + 「號」前空白 → 截到門牌、去內部空白
+    ("台北市信義區松仁路 100 號商辦大樓", "台北市信義區松仁路100號"),
+    # 全形數字 → 半形
+    ("台北市信義區松仁路１００號", "台北市信義區松仁路100號"),
+    # 門牌後接樓層 → 截到「N號」
+    ("花蓮縣花蓮市中央路三段100號3樓", "花蓮縣花蓮市中央路三段100號"),
+    # 已乾淨 → 原樣
+    ("台北市信義區松仁路100號", "台北市信義區松仁路100號"),
+    # 無門牌、含泛稱建物 → 剝除尾綴
+    ("台北101大樓", "台北101"),
+    # 無門牌、無泛稱建物 → 原樣（保留路段供路級查詢）
+    ("新北市板橋區文化路一段", "新北市板橋區文化路一段"),
+    # 多字泛稱建物（辦公大樓）優先於「大樓」
+    ("高雄市前鎮區成功二路25號商業大樓", "高雄市前鎮區成功二路25號"),
+])
+def test_normalize_address(raw, expected):
+    assert _normalize_address(raw) == expected
+
+
+def test_normalize_address_empty():
+    assert _normalize_address("") == ""
+
+
+def test_normalize_address_never_empties():
+    """僅由泛稱建物詞構成時，剝除後為空 → 回傳原文，避免產生空查詢。"""
+    assert _normalize_address("大樓") == "大樓"
+
+
+# ---------------------------------------------------------------------------
+# O. _unique — 保序去重、濾空白（B1 查詢變體組裝）
+# ---------------------------------------------------------------------------
+
+def test_unique_preserves_order_and_dedups():
+    assert _unique(["a", "b", "a", "c"]) == ["a", "b", "c"]
+
+
+def test_unique_filters_blank_and_strips():
+    assert _unique(["  x ", "", "   ", "x", "y"]) == ["x", "y"]
+
+
+# ---------------------------------------------------------------------------
+# P. 正規化查詢變體讓門牌地址在 Nominatim fallthrough 命中（B1 整合）
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_normalized_query_reaches_nominatim():
+    """「…100號商辦大樓」正規化為「…100號」後，作為 Nominatim 查詢之一命中。
+
+    模擬：Google 無 key、TGOS 停用、LLM 萃取原樣回傳；
+    Nominatim 只在收到正規化後（無「商辦大樓」、無空白）字串時回結果。
+    """
+    hit = {"lat": "25.036", "lon": "121.567", "display_name": "松仁路100號"}
+
+    async def fake_get(url, params=None, headers=None, timeout=None):
+        q = (params or {}).get("q", "")
+        resp = MagicMock()
+        resp.status_code = 200
+        # 僅正規化後字串（含「100號」但不含「商辦大樓」與空白）命中
+        if "100號" in q and "商辦大樓" not in q and " " not in q:
+            resp.json.return_value = [hit]
+        else:
+            resp.json.return_value = []
+        return resp
+
+    with patch("app.services.geocoding_service.extract_structured_address",
+               new=AsyncMock(return_value="台北市信義區松仁路 100 號商辦大樓")), \
+         patch("app.services.geocoding_service._extract_landmark_pattern",
+               new=AsyncMock(return_value=None)), \
+         patch("app.services.geocoding_service.extract_address_components",
+               new=AsyncMock(return_value={})), \
+         patch("app.services.geocoding_service.settings") as mock_settings, \
+         patch("httpx.AsyncClient") as mock_client_cls:
+        mock_settings.ANTHROPIC_API_KEY = None
+        mock_settings.GOOGLE_MAPS_API_KEY = None
+        mock_settings.TGOS_APP_ID = ""
+        mock_settings.TGOS_API_KEY = ""
+        mock_async_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__.return_value = mock_async_client
+        mock_async_client.get.side_effect = fake_get
+        result = await _geocode_address_impl("台北市信義區松仁路 100 號商辦大樓")
+
+    assert result is not None
+    assert abs(result["latitude"] - 25.036) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_tgos_gated_off_without_keys():
+    """未設定 TGOS 金鑰 → geocode_tgos 不被呼叫（Step 2 略過）。"""
+    mock_tgos = AsyncMock(return_value=None)
+    nominatim_response = MagicMock()
+    nominatim_response.status_code = 200
+    nominatim_response.json.return_value = []
+
+    with patch("app.services.geocoding_service.extract_structured_address",
+               new=AsyncMock(return_value="台北市信義區松仁路100號")), \
+         patch("app.services.geocoding_service._extract_landmark_pattern",
+               new=AsyncMock(return_value=None)), \
+         patch("app.services.geocoding_service.extract_address_components",
+               new=AsyncMock(return_value={})), \
+         patch("app.services.geocoding_service.geocode_tgos", mock_tgos), \
+         patch("app.services.geocoding_service.settings") as mock_settings, \
+         patch("httpx.AsyncClient") as mock_client_cls:
+        mock_settings.ANTHROPIC_API_KEY = None
+        mock_settings.GOOGLE_MAPS_API_KEY = None
+        mock_settings.TGOS_APP_ID = ""
+        mock_settings.TGOS_API_KEY = ""
+        mock_async_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__.return_value = mock_async_client
+        mock_async_client.get.return_value = nominatim_response
+        await _geocode_address_impl("台北市信義區松仁路100號")
+
+    mock_tgos.assert_not_called()

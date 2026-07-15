@@ -300,6 +300,11 @@ function EventDetail({ event, reports, onUpdate, onDelete, onMergeFrom }: EventD
                 <span className="font-medium">
                   {new Date(event.occurred_at).toLocaleString("zh-TW")}
                 </span>
+                {event.occurred_at_approximate && (
+                  <p className="mt-1 rounded border border-yellow-400 bg-yellow-50 px-2 py-1 text-xs font-semibold text-yellow-700">
+                    ⚠ 使用者未提供時間，系統以通報當下時間為準
+                  </p>
+                )}
               </div>
               <div>
                 <span className="text-gray-500">死亡：</span>

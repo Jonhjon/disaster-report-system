@@ -21,19 +21,24 @@ _JWT_WEAK_KEYS = frozenset(
     }
 )
 
-
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/disaster_report"
     ANTHROPIC_API_KEY: str = ""
     # ANTHROPIC_BASE_URL: str = "https://api.banana2556.com"
     ANTHROPIC_BASE_URL: str = "http://10.0.2.5:8317"
-    CLAUDE_MODEL: str = "gpt-5.4"
+    # CLAUDE_MODEL: str = "claude-sonnet-4-6"
     # CLAUDE_MODEL: str = "claude-haiku-4-5-20251001"
-    # CLAUDE_MODEL: str = "gpt-5.5"
+    # CLAUDE_MODEL: str = "glm-5.2"
+    CLAUDE_MODEL: str = "gpt-5.5"
     # CLAUDE_MODEL: str = "claude-opus-4-6"
     # DEDUP_MODEL: str = "claude-sonnet-4-6"
-    DEDUP_MODEL: str = "gpt-5.4"
+    # DEDUP_MODEL: str = "glm-5.2"
+    DEDUP_MODEL: str = "gpt-5.5"
     GOOGLE_MAPS_API_KEY: str = ""
+    # TGOS 台灣政府地址 geocoding（門牌級、免費、不依賴 Google Billing）。
+    # 於 https://www.tgos.tw 申請 AppId / SecurityKey；留空則 geocode_tgos 自動停用。
+    TGOS_APP_ID: str = ""
+    TGOS_API_KEY: str = ""
     # 無預設值：必須透過環境變數提供強隨機密鑰；不合格值由 validator 擋下
     JWT_SECRET_KEY: str = "fGRmTRoRxEQHlbIKrJtauBjrk4ufBhlA"
     JWT_ALGORITHM: str = "HS256"

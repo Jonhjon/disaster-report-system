@@ -63,8 +63,18 @@ function EventMarker({
             <p>通報數：{event.report_count}</p>
             <p>
               時間：{new Date(event.occurred_at).toLocaleString("zh-TW")}
+              {event.occurred_at_approximate && (
+                <span className="ml-1 text-yellow-700" title="使用者未提供時間，此為系統推斷">
+                  ⚠
+                </span>
+              )}
             </p>
           </div>
+          {event.occurred_at_approximate && (
+            <div className="mt-2 rounded border border-yellow-400 bg-yellow-50 p-2 text-xs">
+              <p className="font-semibold text-yellow-700">⚠ 時間為系統推斷，使用者未提供發生時間</p>
+            </div>
+          )}
           {event.location_approximate && (
             <div className="mt-2 rounded border border-yellow-400 bg-yellow-50 p-2 text-xs">
               <p className="font-semibold text-yellow-700">⚠ 位置為估算，可能不準確</p>

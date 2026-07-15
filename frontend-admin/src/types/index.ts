@@ -14,6 +14,7 @@ export interface DisasterEvent {
   status: EventStatus;
   report_count: number;
   location_approximate: boolean;
+  occurred_at_approximate: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -74,6 +75,7 @@ export interface EventMapItem {
   report_count: number;
   occurred_at: string;
   location_approximate: boolean;
+  occurred_at_approximate: boolean;
 }
 
 export interface ChatMessage {

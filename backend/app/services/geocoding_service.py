@@ -30,6 +30,14 @@ _PLACE_SUFFIXES = [
     "入口", "出口", "地下室", "頂樓",
 ]
 
+# 泛稱建物後綴詞 — 接在門牌號之後、不具唯一 POI 意義的建物泛稱。
+# geocoder 以純門牌查詢時，這類尾綴會降低命中率（Nominatim/TGOS 尤甚），
+# 正規化時剝除。依長度由長到短排序，確保優先剝除最完整的詞（如「商辦大樓」先於「大樓」）。
+_GENERIC_BUILDING_SUFFIXES = [
+    "商業大樓", "辦公大樓", "商辦大樓", "住宅大樓", "社區大樓",
+    "大樓", "大廈", "商辦", "華廈", "公寓", "社區", "住宅",
+]
+
 # Google Places types considered too vague for precise geocoding
 VAGUE_TYPES = {
     "locality",
@@ -68,6 +76,57 @@ def _strip_place_suffix(text: str) -> str | None:
             core = text[: -len(suffix)].strip()
             return core if core else None
     return None
+
+
+# 「號」後方仍可能接樓層／室別／泛稱建物（如「100號3樓」「100號商辦大樓」），截到「N號」為止。
+_HOUSE_NUMBER_RE = re.compile(r"\d+號")
+
+
+def _normalize_address(text: str) -> str:
+    """把口語／含泛稱建物的地址正規化為較利於門牌級 geocoding 的字串。
+
+    處理項目：
+      1. 全形數字／空白 → 半形，並去除「號」前後多餘空白（「100 號」→「100號」）。
+      2. 剝除門牌號之後的泛稱建物尾綴（「…100號商辦大樓」→「…100號」）。
+      3. 若原本就沒有門牌號，僅剝除結尾的泛稱建物詞。
+
+    回傳正規化後字串；若正規化結果為空則回傳原文。
+    """
+    if not text:
+        return text
+    # 全形數字 → 半形（U+FF10–FF19），全形空白 → 半形
+    trans = {ord("０") + i: ord("0") + i for i in range(10)}
+    trans[ord("　")] = ord(" ")
+    normalized = text.translate(trans)
+    # 去除「號」前的空白：「100 號」→「100號」
+    normalized = re.sub(r"\s+號", "號", normalized)
+
+    match = _HOUSE_NUMBER_RE.search(normalized)
+    if match:
+        # 有門牌號 → 截到「…N號」為止，去掉後方樓層/室別/泛稱建物；
+        # 此時為純門牌地址，內部空白僅是雜訊，一併移除以利精確比對。
+        cut = normalized[: match.end()]
+        result = re.sub(r"\s+", "", cut)
+    else:
+        # 沒有門牌號 → 僅剝除結尾泛稱建物詞（單次，取最長匹配）
+        result = normalized.strip()
+        for suffix in _GENERIC_BUILDING_SUFFIXES:
+            if result.endswith(suffix):
+                result = result[: -len(suffix)].strip()
+                break
+    return result if result else text
+
+
+def _unique(items: list[str]) -> list[str]:
+    """保序去重，並濾掉空字串／純空白，供組裝 geocoder 查詢變體清單。"""
+    seen: set[str] = set()
+    out: list[str] = []
+    for it in items:
+        it = (it or "").strip()
+        if it and it not in seen:
+            seen.add(it)
+            out.append(it)
+    return out
 
 
 _NEARBY_KEYWORDS = re.compile(r".+(?:附近|旁邊|對面|靠近|旁|周邊|邊上|隔壁).+")
@@ -207,12 +266,30 @@ async def extract_address_components(text: str) -> dict:
 
 
 async def geocode_tgos(address: str) -> dict | None:
-    """Query Taiwan TGOS address geocoding API.
+    """Query Taiwan TGOS address geocoding API（門牌級，不依賴 Google Billing）。
 
-    Returns {"latitude": float, "longitude": float, "display_name": str} or None.
+    需在 settings 設定 TGOS_APP_ID / TGOS_API_KEY（於 https://www.tgos.tw 申請）。
+    未設定時直接回傳 None，等同停用，不影響其餘 geocoder 流程。
+
+    Returns {"latitude": float, "longitude": float, "display_name": str, "source": "tgos"} or None.
+
+    座標系：TGOS 預設輸出 EPSG:4326（WGS84 經緯度），與本系統 PostGIS SRID 一致。
     """
+    app_id = settings.TGOS_APP_ID
+    api_key = settings.TGOS_API_KEY
+    if not app_id or not api_key:
+        return None
+
     url = "https://addr.tgos.tw/addr/api/addrquery/"
-    params = {"Addr": address, "Alias": "2", "Pnum": "1", "Page": "0"}
+    params = {
+        "Addr": address,
+        "Alias": "2",
+        "Pnum": "1",
+        "Page": "0",
+        "SRS": "EPSG:4326",
+        "oAuth.AppId": app_id,
+        "oAuth.SecurityKey": api_key,
+    }
     headers = {"User-Agent": "DisasterReportSystem/1.0"}
 
     try:
@@ -234,6 +311,7 @@ async def geocode_tgos(address: str) -> dict | None:
                     "latitude": lat,
                     "longitude": lon,
                     "display_name": first.get("FULL_ADDR", address),
+                    "source": "tgos",
                 }
     except Exception:
         pass
@@ -419,6 +497,9 @@ async def _geocode_address_impl(address: str) -> dict | None:
     # Step 1: LLM-assisted address extraction
     searchable = await extract_structured_address(address)
 
+    # 地址正規化（全形→半形、去「號」前空白、剝除泛稱建物尾綴），供各 geocoder 作為額外查詢變體。
+    normalized = _normalize_address(address)
+
     # Step 0: Two-stage geocoding for "A附近的B" landmark pattern
     landmark_info = await _extract_landmark_pattern(address)
     if landmark_info is not None:
@@ -468,15 +549,13 @@ async def _geocode_address_impl(address: str) -> dict | None:
             if result:
                 return result
 
-    # Step 2: TGOS (try LLM-extracted query first, then original)
-    # TODO: TGOS endpoint (https://addr.tgos.tw/addr/api/addrquery/) returns 404 — disabled until a valid endpoint is found
-    # tgos_queries = [searchable]
-    # if address != searchable:
-    #     tgos_queries.append(address)
-    # for q in tgos_queries:
-    #     result = await geocode_tgos(q)
-    #     if result:
-    #         return result
+    # Step 2: TGOS（台灣政府地址 geocoding，門牌級、不依賴 Google Billing）。
+    # 僅在 settings 具備 TGOS 金鑰時啟用；未設定時 geocode_tgos() 回傳 None，等同停用。
+    if settings.TGOS_APP_ID and settings.TGOS_API_KEY:
+        for q in _unique([normalized, searchable, address]):
+            result = await geocode_tgos(q)
+            if result:
+                return result
 
     # Step 3: Nominatim fallback — free-text queries
     url = "https://nominatim.openstreetmap.org/search"
@@ -484,9 +563,11 @@ async def _geocode_address_impl(address: str) -> dict | None:
         "User-Agent": "DisasterReportSystem/1.0",
         "Accept-Language": "zh-TW,zh;q=0.9",
     }
-    nominatim_queries = [searchable, searchable + " 台灣"]
-    if address != searchable:
-        nominatim_queries += [address, address + " 台灣"]
+    nominatim_queries = _unique([
+        normalized, normalized + " 台灣",
+        searchable, searchable + " 台灣",
+        address, address + " 台灣",
+    ])
 
     # Step 3b: Structured Nominatim query from parsed components
     components = await extract_address_components(searchable)
@@ -543,11 +624,8 @@ async def _geocode_address_impl(address: str) -> dict | None:
         pass
 
     # Step 4: Google Places Text Search (for specific businesses/POIs)
-    # Original text first (preserves landmark context), then LLM-extracted
-    places_queries = []
-    if address != searchable:
-        places_queries.append(address)
-    places_queries.append(searchable)
+    # 原文優先（保留地標／建物脈絡），其次 LLM 萃取字串，最後正規化門牌字串。
+    places_queries = _unique([address, searchable, normalized])
 
     for q in places_queries:
         result = await geocode_google_places(q)
@@ -555,7 +633,8 @@ async def _geocode_address_impl(address: str) -> dict | None:
             return result
 
     # Step 5: Google Geocoding fallback (address-level)
-    for q in places_queries:
+    # 正規化門牌字串優先（Geocoding API 對純門牌命中率最高），再回退原文／LLM 字串。
+    for q in _unique([normalized, address, searchable]):
         result = await geocode_google(q)
         if result:
             return result

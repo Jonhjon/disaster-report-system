@@ -37,8 +37,6 @@ class Settings(BaseSettings):
     GOOGLE_MAPS_API_KEY: str = ""
     # TGOS 台灣政府地址 geocoding（門牌級、免費、不依賴 Google Billing）。
     # 於 https://www.tgos.tw 申請 AppId / SecurityKey；留空則 geocode_tgos 自動停用。
-    TGOS_APP_ID: str = ""
-    TGOS_API_KEY: str = ""
     # 無預設值：必須透過環境變數提供強隨機密鑰；不合格值由 validator 擋下
     JWT_SECRET_KEY: str = "fGRmTRoRxEQHlbIKrJtauBjrk4ufBhlA"
     JWT_ALGORITHM: str = "HS256"

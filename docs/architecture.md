@@ -167,9 +167,8 @@
 1. **快取檢查** — 相同字串已查詢過則直接返回
 2. **LLM 改寫** — Claude 將口語地點轉成結構化格式
 3. **地標模式偵測** — 不含路名的地點，優先查 Google Places
-4. **TGOS** — 台灣政府地址 API（目前停用，端點返回 404）
-5. **Nominatim** — OpenStreetMap 免費 Geocoding
-6. **Google Places** — 備援
-7. **Google Geocoding** — 最終備援
+4. **Nominatim** — OpenStreetMap 免費 Geocoding
+5. **Google Places** — 備援
+6. **Google Geocoding** — 最終備援
 
 全部失敗 → `location_approximate = true`，座標用台灣中心點

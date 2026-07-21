@@ -35,8 +35,6 @@ class Settings(BaseSettings):
     # DEDUP_MODEL: str = "glm-5.2"
     DEDUP_MODEL: str = "gpt-5.5"
     GOOGLE_MAPS_API_KEY: str = ""
-    # TGOS 台灣政府地址 geocoding（門牌級、免費、不依賴 Google Billing）。
-    # 於 https://www.tgos.tw 申請 AppId / SecurityKey；留空則 geocode_tgos 自動停用。
     # 無預設值：必須透過環境變數提供強隨機密鑰；不合格值由 validator 擋下
     JWT_SECRET_KEY: str = "fGRmTRoRxEQHlbIKrJtauBjrk4ufBhlA"
     JWT_ALGORITHM: str = "HS256"

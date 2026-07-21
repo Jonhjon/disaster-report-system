@@ -32,14 +32,13 @@
      └─ 不精確且未超過追問上限 → 追問使用者補充地址
         │
         ▼
-  [Step 0~5 Geocoding 策略]
+  [Step 0~4 Geocoding 策略]
   Step 0: 快取查詢
   Step 1: Claude Haiku 正規化地址
   Step 1.5: Named-place fast path（Google Places）
-  Step 2: TGOS API ⚠️ 暫停使用
-  Step 3: Nominatim / OpenStreetMap
-  Step 4: Google Places Text Search（備援）
-  Step 5: Google Maps Geocoding API（最終備援）
+  Step 2: Nominatim / OpenStreetMap
+  Step 3: Google Places Text Search（備援）
+  Step 4: Google Maps Geocoding API（最終備援）
   └─ 若全部失敗 → 返回 None，座標用台灣中心 (23.5, 121.0)
         │
         ▼
@@ -59,7 +58,7 @@
 
 ## 地理編碼（Geocoding）
 
-### Step 0~5 策略
+### Step 0~4 策略
 
 `geocode_address()` 依序嘗試以下步驟，任一成功即停止：
 
@@ -68,10 +67,9 @@
 | 0 | **快取**：相同字串曾查詢過 → 直接返回（上限 500 筆，process-level） |
 | 1 | **LLM 改寫（Claude Haiku）**：`extract_structured_address()` 將口語地點轉成可查格式，產生 `searchable` |
 | 1.5 | **Named-place fast path**：`address` 不含路名字詞時，直接以 `address` / `searchable` 查 Google Places；若結尾含場所後綴詞則以 `_strip_place_suffix()` 剝除後再試 |
-| 2 | **TGOS**（台灣政府地址 API）⚠️ 暫停使用：端點回傳 404，程式碼已註解，待找到可用端點後再啟用 |
-| 3 | **Nominatim**（OpenStreetMap）：依序查 `searchable` / `searchable + " 台灣"` / `address` / `address + " 台灣"` / 結構化查詢 |
-| 4 | **Google Places Text Search（備援）**：Step 1.5 未觸發才到此；回傳純行政區劃層級（`VAGUE_TYPES`）視為模糊結果，繼續 fallback |
-| 5 | **Google Maps Geocoding API（最終備援）**：依序查 `address` → `searchable`；全部失敗 → 返回 `None` |
+| 2 | **Nominatim**（OpenStreetMap）：依序查 `searchable` / `searchable + " 台灣"` / `address` / `address + " 台灣"` / 結構化查詢 |
+| 3 | **Google Places Text Search（備援）**：Step 1.5 未觸發才到此；回傳純行政區劃層級（`VAGUE_TYPES`）視為模糊結果，繼續 fallback |
+| 4 | **Google Maps Geocoding API（最終備援）**：依序查 `address` → `searchable`；全部失敗 → 返回 `None` |
 
 ### Step 1 — 地址正規化
 
@@ -94,21 +92,7 @@
 
 > 判斷以 `address` 為準而非 `searchable`，避免 LLM 猜測路名導致 fast path 被略過。
 
-### Step 2 — TGOS API（台灣優先）⚠️ 暫停使用
-
-> **目前停用**：端點 `https://addr.tgos.tw/addr/api/addrquery/` 回傳 404，`geocode_tgos()` 呼叫已註解。待找到可用端點後再啟用。
-
-`geocode_tgos(address)` 原本查詢行政院主導的台灣地理資訊系統，專為台灣地址優化，回傳格式：
-
-```json
-{
-  "latitude": 25.033,
-  "longitude": 121.565,
-  "display_name": "台北市信義區基隆路一段"
-}
-```
-
-### Step 3 — Nominatim（備援）
+### Step 2 — Nominatim（備援）
 
 免費開源，僅接受台灣境內座標。依序查詢 `searchable`、`searchable + " 台灣"`、`address`、`address + " 台灣"`、結構化查詢（Claude Haiku 解析的 county/city/street）。
 
@@ -205,7 +189,6 @@ point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
 | 功能 | 檔案 | 關鍵函式 |
 |------|------|---------|
 | 地址正規化 | `geocoding_service.py` | `extract_structured_address()` |
-| TGOS 查詢 | `geocoding_service.py` | `geocode_tgos()` |
 | Geocoding 主流程 | `geocoding_service.py` | `geocode_address()` |
 | 通報處理與座標存入 | `chat.py` | `_process_tool_use()` |
 | 地圖容器與動態載入 | `DisasterMap.tsx` | `MapEventLoader` |

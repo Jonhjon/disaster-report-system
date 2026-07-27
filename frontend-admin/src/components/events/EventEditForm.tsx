@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { DisasterEvent, EventStatus } from "../../types";
+import { fromDatetimeLocal, toDatetimeLocal } from "../../utils/format";
 
 interface EventEditFormProps {
   event: DisasterEvent;
@@ -16,6 +17,7 @@ function EventEditForm({ event, onSave, onCancel }: EventEditFormProps) {
     casualties: event.casualties,
     injured: event.injured,
     trapped: event.trapped,
+    occurred_at: toDatetimeLocal(event.occurred_at),
   });
   const [saving, setSaving] = useState(false);
 
@@ -23,7 +25,10 @@ function EventEditForm({ event, onSave, onCancel }: EventEditFormProps) {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave(form);
+      await onSave({
+        ...form,
+        occurred_at: fromDatetimeLocal(form.occurred_at),
+      });
     } finally {
       setSaving(false);
     }
@@ -38,6 +43,16 @@ function EventEditForm({ event, onSave, onCancel }: EventEditFormProps) {
           className="w-full rounded border px-3 py-2 text-sm"
           value={form.title}
           onChange={(e) => setForm({ ...form, title: e.target.value })}
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm text-gray-600">發生時間</label>
+        <input
+          type="datetime-local"
+          className="w-full rounded border px-3 py-2 text-sm"
+          value={form.occurred_at}
+          onChange={(e) => setForm({ ...form, occurred_at: e.target.value })}
         />
       </div>
 

@@ -143,6 +143,10 @@ def update_event(db: Session, event_id: UUID, data: EventUpdate) -> EventRespons
     for key, value in update_data.items():
         setattr(event, key, value)
 
+    # 管理員手動指定時間 → 視為精確時間，清除系統推斷旗標
+    if "occurred_at" in update_data:
+        event.occurred_at_approximate = False
+
     db.commit()
     db.refresh(event)
     return get_event_by_id(db, event_id)

@@ -101,6 +101,7 @@ export interface EventUpdateData {
   casualties?: number;
   injured?: number;
   trapped?: number;
+  occurred_at?: string;
 }
 
 export const DISASTER_TYPE_LABELS: Record<DisasterType, string> = {

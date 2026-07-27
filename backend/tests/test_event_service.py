@@ -2,6 +2,7 @@
 方向二：Event Service 業務邏輯（5 案例）
 策略：Mock SQLAlchemy session，測試純 Python 邏輯
 """
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -114,3 +115,60 @@ def test_update_event_partial_status_only():
     assert set_attrs["status"] == "in_progress"
     assert "title" not in set_attrs
     assert "severity" not in set_attrs
+
+
+# Case 11: update_event 更新 occurred_at → 自動清除 occurred_at_approximate 旗標
+def test_update_event_occurred_at_clears_approximate_flag():
+    event_id = uuid4()
+    mock_db = MagicMock()
+
+    set_attrs: dict = {}
+
+    class FakeEvent:
+        id = event_id
+        occurred_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        occurred_at_approximate = True
+
+        def __setattr__(self, key, value):
+            set_attrs[key] = value
+            object.__setattr__(self, key, value)
+
+    fake_event = FakeEvent()
+    mock_db.query.return_value.filter.return_value.first.return_value = fake_event
+
+    new_time = datetime(2026, 7, 20, 3, 0, tzinfo=timezone.utc)
+    with patch("app.services.event_service.get_event_by_id") as mock_get_by_id:
+        mock_get_by_id.return_value = MagicMock()
+        data = EventUpdate(occurred_at=new_time)
+        update_event(mock_db, event_id, data)
+
+    assert set_attrs["occurred_at"] == new_time
+    assert set_attrs["occurred_at_approximate"] is False
+
+
+# Case 12: update_event 未更新 occurred_at → 不動 occurred_at_approximate 旗標
+def test_update_event_without_occurred_at_keeps_approximate_flag():
+    event_id = uuid4()
+    mock_db = MagicMock()
+
+    set_attrs: dict = {}
+
+    class FakeEvent:
+        id = event_id
+        title = "Original Title"
+        occurred_at_approximate = True
+
+        def __setattr__(self, key, value):
+            set_attrs[key] = value
+            object.__setattr__(self, key, value)
+
+    fake_event = FakeEvent()
+    mock_db.query.return_value.filter.return_value.first.return_value = fake_event
+
+    with patch("app.services.event_service.get_event_by_id") as mock_get_by_id:
+        mock_get_by_id.return_value = MagicMock()
+        data = EventUpdate(title="New Title")
+        update_event(mock_db, event_id, data)
+
+    assert set_attrs["title"] == "New Title"
+    assert "occurred_at_approximate" not in set_attrs

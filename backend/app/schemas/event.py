@@ -38,6 +38,7 @@ class EventUpdate(BaseModel):
     casualties: int | None = None
     injured: int | None = None
     trapped: int | None = None
+    occurred_at: datetime | None = None
 
     @field_validator("status")
     @classmethod

@@ -142,16 +142,16 @@ Write-Host ''
 Write-Host '[3/5] 建立資料庫資料表...' -ForegroundColor Yellow
 Set-Location $BackendDir
 $VenvPython = Join-Path $BackendDir 'venv\Scripts\python.exe'
-$VenvAlembic = Join-Path $BackendDir 'venv\Scripts\alembic.exe'
-& $VenvAlembic upgrade head
+# 以 python -m alembic 執行（而非 alembic.exe），避免資料夾改名後 exe wrapper 內嵌舊路徑失效
+& $VenvPython -m alembic upgrade head
 if ($LASTEXITCODE -ne 0) {
     Write-Host ''
     Write-Host '[!!] Alembic 遷移失敗' -ForegroundColor Red
     Write-Host '     後端可能因 schema 不一致而報錯。請依序確認：' -ForegroundColor Yellow
     Write-Host '       1. Docker 容器 disaster_db 是否就緒（docker ps）' -ForegroundColor Yellow
     Write-Host '       2. backend\.env 的 DATABASE_URL 密碼是否與 docker-compose.yml 一致' -ForegroundColor Yellow
-    Write-Host '       3. 手動檢查當前版本：venv\Scripts\alembic.exe current' -ForegroundColor Yellow
-    Write-Host '       4. 手動套用：venv\Scripts\alembic.exe upgrade head' -ForegroundColor Yellow
+    Write-Host '       3. 手動檢查當前版本：venv\Scripts\python.exe -m alembic current' -ForegroundColor Yellow
+    Write-Host '       4. 手動套用：venv\Scripts\python.exe -m alembic upgrade head' -ForegroundColor Yellow
     Write-Host '     腳本會繼續啟動服務，但若後端啟動後 API 報 500，請優先排查上述項目。' -ForegroundColor Yellow
     Write-Host ''
 }

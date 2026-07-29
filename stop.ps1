@@ -45,11 +45,35 @@ Write-Host '[3/4] 停止資料庫容器...' -ForegroundColor Yellow
 Set-Location $ProjectDir
 $dockerExe = "$DockerPath\docker.exe"
 if (Test-Path $dockerExe) {
-    & $dockerExe compose stop
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host '      資料庫容器已暫停（資料保留）' -ForegroundColor Green
+    # 以背景工作執行 compose stop，最多等 25 秒。
+    # Windows/Docker Desktop 上 compose stop 偶爾會卡在無回應的 daemon，
+    # 逾時則改用容器名強制停止，確保本腳本永遠不會卡死。
+    $stopJob = Start-Job -ScriptBlock {
+        param($exe, $dir)
+        Set-Location $dir
+        & $exe compose stop -t 10 | Out-Null
+        $LASTEXITCODE
+    } -ArgumentList $dockerExe, $ProjectDir
+
+    if (Wait-Job $stopJob -Timeout 25) {
+        $exit = Receive-Job $stopJob | Select-Object -Last 1
+        Remove-Job $stopJob -Force -ErrorAction SilentlyContinue
+        if ($exit -eq 0) {
+            Write-Host '      資料庫容器已暫停（資料保留）' -ForegroundColor Green
+        } else {
+            Write-Host '      資料庫容器停止失敗（可能已停止）' -ForegroundColor Gray
+        }
     } else {
-        Write-Host '      資料庫容器停止失敗（可能已停止）' -ForegroundColor Gray
+        # compose stop 逾時，直接強制停止容器（資料仍保留於 volume）
+        Write-Host '      compose stop 逾時，改用強制停止...' -ForegroundColor Yellow
+        Stop-Job $stopJob -ErrorAction SilentlyContinue
+        Remove-Job $stopJob -Force -ErrorAction SilentlyContinue
+        & $dockerExe kill disaster_db 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host '      資料庫容器已強制停止（資料保留）' -ForegroundColor Green
+        } else {
+            Write-Host '      無法停止資料庫容器，請手動檢查（docker ps）' -ForegroundColor Red
+        }
     }
 } else {
     Write-Host '      找不到 Docker，略過' -ForegroundColor Gray

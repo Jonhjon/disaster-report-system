@@ -18,6 +18,7 @@ from app.api import (
 )
 from app.config import settings
 from app.database import SessionLocal
+from app.logging_filters import RedactSecretsFilter
 from app.services.attachment_cleanup import cleanup_orphan_attachments
 
 # 孤兒附件保留窗（小時）與清理掃描間隔（秒）
@@ -30,12 +31,18 @@ def _configure_logging() -> None:
 
     `force=True` 確保即使 uvicorn / pytest 已預設 handler，也會被本 app 的格式覆蓋，
     讓生產環境 log 走一致 format，方便 ELK / CloudWatch 解析。
+
+    另掛 `RedactSecretsFilter` 於所有 root handler，遮罩 URL 中的 API key / token
+    等敏感 query 參數（httpx 於 INFO 會印出含 `key=` 的完整 URL）。
     """
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
         force=True,
     )
+    secrets_filter = RedactSecretsFilter()
+    for handler in logging.getLogger().handlers:
+        handler.addFilter(secrets_filter)
 
 
 _configure_logging()

@@ -45,20 +45,17 @@ Write-Host '[3/4] 停止資料庫容器...' -ForegroundColor Yellow
 Set-Location $ProjectDir
 $dockerExe = "$DockerPath\docker.exe"
 if (Test-Path $dockerExe) {
-    # 以背景工作執行 compose stop，最多等 25 秒。
+    # 以子行程執行 compose stop，最多等 25 秒。
     # Windows/Docker Desktop 上 compose stop 偶爾會卡在無回應的 daemon，
     # 逾時則改用容器名強制停止，確保本腳本永遠不會卡死。
-    $stopJob = Start-Job -ScriptBlock {
-        param($exe, $dir)
-        Set-Location $dir
-        & $exe compose stop -t 10 | Out-Null
-        $LASTEXITCODE
-    } -ArgumentList $dockerExe, $ProjectDir
+    # （用 Start-Process 而非 Start-Job：後者會另開 PowerShell 子行程，
+    #   在部分 .NET/venv 環境下載入 job 組件會拋 System.Runtime 版本錯誤。）
+    $stopProc = Start-Process -FilePath $dockerExe `
+        -ArgumentList 'compose', 'stop', '-t', '10' `
+        -WorkingDirectory $ProjectDir -NoNewWindow -PassThru
 
-    if (Wait-Job $stopJob -Timeout 25) {
-        $exit = Receive-Job $stopJob | Select-Object -Last 1
-        Remove-Job $stopJob -Force -ErrorAction SilentlyContinue
-        if ($exit -eq 0) {
+    if ($stopProc.WaitForExit(25000)) {
+        if ($stopProc.ExitCode -eq 0) {
             Write-Host '      資料庫容器已暫停（資料保留）' -ForegroundColor Green
         } else {
             Write-Host '      資料庫容器停止失敗（可能已停止）' -ForegroundColor Gray
@@ -66,8 +63,7 @@ if (Test-Path $dockerExe) {
     } else {
         # compose stop 逾時，直接強制停止容器（資料仍保留於 volume）
         Write-Host '      compose stop 逾時，改用強制停止...' -ForegroundColor Yellow
-        Stop-Job $stopJob -ErrorAction SilentlyContinue
-        Remove-Job $stopJob -Force -ErrorAction SilentlyContinue
+        try { $stopProc.Kill() } catch { }
         & $dockerExe kill disaster_db 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Host '      資料庫容器已強制停止（資料保留）' -ForegroundColor Green

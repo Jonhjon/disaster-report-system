@@ -325,9 +325,6 @@ async def test_named_place_fast_path_suffix_stripped_still_fails():
         "app.services.geocoding_service.extract_structured_address",
         new=AsyncMock(return_value="三育基督學院教室"),
     ), patch(
-        "app.services.geocoding_service.geocode_tgos",
-        new=AsyncMock(return_value=None),
-    ), patch(
         "app.services.geocoding_service.extract_address_components",
         new=AsyncMock(return_value={}),
     ), patch("httpx.AsyncClient") as mock_client_cls:
@@ -1154,30 +1151,5 @@ async def test_normalized_query_reaches_nominatim():
     assert abs(result["latitude"] - 25.036) < 0.01
 
 
-@pytest.mark.asyncio
-async def test_tgos_gated_off_without_keys():
-    """未設定 TGOS 金鑰 → geocode_tgos 不被呼叫（Step 2 略過）。"""
-    mock_tgos = AsyncMock(return_value=None)
-    nominatim_response = MagicMock()
-    nominatim_response.status_code = 200
-    nominatim_response.json.return_value = []
-
-    with patch("app.services.geocoding_service.extract_structured_address",
-               new=AsyncMock(return_value="台北市信義區松仁路100號")), \
-         patch("app.services.geocoding_service._extract_landmark_pattern",
-               new=AsyncMock(return_value=None)), \
-         patch("app.services.geocoding_service.extract_address_components",
-               new=AsyncMock(return_value={})), \
-         patch("app.services.geocoding_service.geocode_tgos", mock_tgos), \
-         patch("app.services.geocoding_service.settings") as mock_settings, \
-         patch("httpx.AsyncClient") as mock_client_cls:
-        mock_settings.ANTHROPIC_API_KEY = None
-        mock_settings.GOOGLE_MAPS_API_KEY = None
-        mock_settings.TGOS_APP_ID = ""
-        mock_settings.TGOS_API_KEY = ""
-        mock_async_client = AsyncMock()
-        mock_client_cls.return_value.__aenter__.return_value = mock_async_client
-        mock_async_client.get.return_value = nominatim_response
-        await _geocode_address_impl("台北市信義區松仁路100號")
-
-    mock_tgos.assert_not_called()
+# test_tgos_gated_off_without_keys 已移除：
+# TGOS 地理編碼服務已自系統移除（geocode_tgos 不再存在），無對應行為可測。

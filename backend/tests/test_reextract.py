@@ -93,8 +93,11 @@ async def test_reextract_ignores_invalid_severity():
 # ── _process_tool_use 合併分支整合測試（Path B: merge_event_id）──────────────
 
 @pytest.mark.asyncio
-async def test_merge_branch_updates_fields_via_merge_event_id(mock_db):
-    """使用 merge_event_id 合併時，injured 應以 max() 更新"""
+async def test_merge_branch_overwrites_numbers_from_reextract(mock_db):
+    """merge_event_id 合併，reextract 成功 → 以絕對值覆寫傷亡數字。
+
+    （現行語意：從合併後描述重新萃取並覆寫，非舊版 max()。以 mock 固定 reextract
+    回傳值使測試具決定性，不依賴真實 LLM。）"""
     from app.api.chat import _process_tool_use
 
     mock_event = MagicMock()
@@ -104,6 +107,7 @@ async def test_merge_branch_updates_fields_via_merge_event_id(mock_db):
     mock_event.severity = 3
     mock_event.casualties = 0
     mock_event.injured = 5
+    mock_event.severe_injured = 0
     mock_event.trapped = 0
     mock_event.status = "reported"
     mock_event.description = "中山路7-11發生火災，5人受傷。"
@@ -124,17 +128,20 @@ async def test_merge_branch_updates_fields_via_merge_event_id(mock_db):
     })
     coords = {"display_name": "台北市中山路", "latitude": 25.05, "longitude": 121.53}
 
-    result = await _process_tool_use(tool_data, "通報訊息", mock_db, coords)
+    with patch("app.api.chat.merge_event_descriptions", new=AsyncMock(return_value="合併後描述")), \
+         patch("app.api.chat.reextract_numbers_from_description",
+               new=AsyncMock(return_value={"casualties": 0, "injured": 6, "trapped": 0})):
+        result = await _process_tool_use(tool_data, "通報訊息", mock_db, coords)
 
     assert result["status"] == "merged"
-    assert mock_event.injured == 6      # max(5, 6) = 6
-    assert mock_event.report_count == 2
+    assert mock_event.injured == 6      # reextract 絕對值覆寫
 
 
 @pytest.mark.asyncio
-async def test_merge_branch_keeps_higher_existing_values(mock_db):
-    """合併時既有欄位較大 → 保留既有值（max 語意）"""
+async def test_merge_branch_severity_max_and_numbers_accumulate_on_fallback(mock_db):
+    """reextract 失敗（fallback）→ severity 取 max、傷亡數以 atomic SQL 累加。"""
     from app.api.chat import _process_tool_use
+    from sqlalchemy.sql.elements import BinaryExpression
 
     mock_event = MagicMock()
     mock_event.id = __import__("uuid").uuid4()
@@ -143,6 +150,7 @@ async def test_merge_branch_keeps_higher_existing_values(mock_db):
     mock_event.severity = 4
     mock_event.casualties = 2
     mock_event.injured = 5
+    mock_event.severe_injured = 0
     mock_event.trapped = 3
     mock_event.status = "reported"
     mock_event.description = "中山路7-11發生火災，5人受傷。"
@@ -163,10 +171,11 @@ async def test_merge_branch_keeps_higher_existing_values(mock_db):
     })
     coords = {"display_name": "台北市中山路", "latitude": 25.05, "longitude": 121.53}
 
-    result = await _process_tool_use(tool_data, "通報訊息", mock_db, coords)
+    with patch("app.api.chat.merge_event_descriptions", new=AsyncMock(return_value="合併後描述")), \
+         patch("app.api.chat.reextract_numbers_from_description", new=AsyncMock(return_value={})):
+        result = await _process_tool_use(tool_data, "通報訊息", mock_db, coords)
 
     assert result["status"] == "merged"
-    assert mock_event.severity == 4     # max(4, 3) = 4
-    assert mock_event.casualties == 2   # max(2, 0) = 2
-    assert mock_event.injured == 5      # max(5, 5) = 5
-    assert mock_event.trapped == 3      # max(3, 0) = 3
+    assert mock_event.severity == 4                             # max(4, 3)
+    assert isinstance(mock_event.casualties, BinaryExpression)  # atomic 累加
+    assert isinstance(mock_event.injured, BinaryExpression)

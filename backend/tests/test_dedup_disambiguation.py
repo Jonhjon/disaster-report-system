@@ -40,6 +40,7 @@ def _make_mock_event(
     status="reported",
     casualties=0,
     injured=1,
+    severe_injured=0,
     trapped=0,
     occurred_at=None,
     location=None,
@@ -56,6 +57,7 @@ def _make_mock_event(
     event.status = status
     event.casualties = casualties
     event.injured = injured
+    event.severe_injured = severe_injured
     event.trapped = trapped
     event.occurred_at = occurred_at or datetime.now(timezone.utc)
     event.updated_at = datetime.now(timezone.utc)

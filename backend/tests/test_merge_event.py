@@ -34,6 +34,7 @@ def _make_mock_event(
     status="reported",
     casualties=0,
     injured=3,
+    severe_injured=0,
     trapped=0,
     occurred_at_approximate=False,
 ):
@@ -48,6 +49,7 @@ def _make_mock_event(
     event.status = status
     event.casualties = casualties
     event.injured = injured
+    event.severe_injured = severe_injured
     event.trapped = trapped
     event.occurred_at = datetime.now(timezone.utc)
     event.occurred_at_approximate = occurred_at_approximate

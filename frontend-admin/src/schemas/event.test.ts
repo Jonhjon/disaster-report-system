@@ -17,6 +17,7 @@ const validEvent = {
   occurred_at: "2026-04-20T10:00:00Z",
   casualties: 0,
   injured: 2,
+  severe_injured: 1,
   trapped: 0,
   status: "reported",
   report_count: 1,

@@ -37,7 +37,8 @@ Thumbs.db
 災情通報語句分析.md
 node_modules
 evaluation/
-tests/
+# 只忽略根目錄的 eval 產生物（tests/eval/reports 等），不含 backend/tests 單元測試
+/tests/
 .env
 /backend/app/static/uploads/
 backend/.env.test

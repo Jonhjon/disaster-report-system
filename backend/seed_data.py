@@ -19,9 +19,16 @@ from geoalchemy2.functions import ST_SetSRID, ST_MakePoint
 def seed():
     db = SessionLocal()
     try:
-        # Clear existing events
-        db.query(DisasterEvent).delete()
-        db.commit()
+        # 安全防呆：只在空資料庫時 seed。
+        # 偵測到既有事件就跳過，避免在正式/開發資料上誤觸清空與重建。
+        # 如需重新 seed，請先清空資料庫（例如 `docker compose down -v` 重建 volume）。
+        existing = db.query(DisasterEvent).count()
+        if existing > 0:
+            print(
+                f"Skipped: {existing} event(s) already exist. "
+                "Seed only runs on an empty database."
+            )
+            return
 
         event1 = DisasterEvent(
             title="台北市大安區人員受困",
@@ -33,6 +40,7 @@ def seed():
             occurred_at=datetime.now(timezone.utc),
             casualties=0,
             injured=2,
+            severe_injured=1,
             trapped=5,
         )
 
@@ -46,6 +54,7 @@ def seed():
             occurred_at=datetime.now(timezone.utc),
             casualties=0,
             injured=0,
+            severe_injured=0,
             trapped=0,
         )
 

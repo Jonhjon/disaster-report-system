@@ -26,6 +26,7 @@ def _event_to_response(event: DisasterEvent) -> EventResponse:
         occurred_at=event.occurred_at,
         casualties=event.casualties,
         injured=event.injured,
+        severe_injured=event.severe_injured,
         trapped=event.trapped,
         status=event.status,
         report_count=event.report_count,

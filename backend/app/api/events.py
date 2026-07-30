@@ -156,15 +156,20 @@ async def merge_events(
             target.casualties = extracted["casualties"]
         if "injured" in extracted:
             target.injured = extracted["injured"]
+        if "severe_injured" in extracted:
+            target.severe_injured = extracted["severe_injured"]
         if "trapped" in extracted:
             target.trapped = extracted["trapped"]
         if "severity" in extracted:
             target.severity = max(target.severity, extracted["severity"])
         else:
             target.severity = max(target.severity, source.severity)
+        # 覆寫分支各欄獨立更新，可能出現 severe > injured（部分抽取），收斂維持子集不變式
+        target.severe_injured = min(target.severe_injured, target.injured)
     else:
         target.casualties = (target.casualties or 0) + (source.casualties or 0)
         target.injured = (target.injured or 0) + (source.injured or 0)
+        target.severe_injured = (target.severe_injured or 0) + (source.severe_injured or 0)
         target.trapped = (target.trapped or 0) + (source.trapped or 0)
         target.severity = max(target.severity, source.severity)
 

@@ -224,15 +224,20 @@ async def _merge_into_event(
             target_event.casualties = extracted["casualties"]
         if "injured" in extracted:
             target_event.injured = extracted["injured"]
+        if "severe_injured" in extracted:
+            target_event.severe_injured = extracted["severe_injured"]
         if "trapped" in extracted:
             target_event.trapped = extracted["trapped"]
         if "severity" in extracted:
             target_event.severity = max(target_event.severity, extracted["severity"])
         else:
             target_event.severity = max(target_event.severity, tool_data.severity)
+        # 覆寫分支各欄獨立更新，可能出現 severe > injured（部分抽取），收斂維持子集不變式
+        target_event.severe_injured = min(target_event.severe_injured, target_event.injured)
     else:
         target_event.casualties = DisasterEvent.casualties + tool_data.casualties
         target_event.injured = DisasterEvent.injured + tool_data.injured
+        target_event.severe_injured = DisasterEvent.severe_injured + tool_data.severe_injured
         target_event.trapped = DisasterEvent.trapped + tool_data.trapped
         target_event.severity = max(target_event.severity, tool_data.severity)
 
@@ -321,6 +326,7 @@ async def _create_new_event(
         occurred_at=occurred_at,
         casualties=tool_data.casualties,
         injured=tool_data.injured,
+        severe_injured=tool_data.severe_injured,
         trapped=tool_data.trapped,
         location_approximate=location_approximate,
         occurred_at_approximate=occurred_at_approximate,

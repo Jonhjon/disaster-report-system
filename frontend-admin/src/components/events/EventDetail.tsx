@@ -10,6 +10,7 @@ import EventEditForm from "./EventEditForm";
 import ChatMessageView from "../chat/ChatMessageView";
 import { getEvents } from "../../services/api";
 import { formatBytes } from "../../utils/format";
+import { formatSevereSuffix } from "../../utils/injury";
 import { parseRawMessage } from "../../utils/parseRawMessage";
 
 interface EventDetailProps {
@@ -312,7 +313,14 @@ function EventDetail({ event, reports, onUpdate, onDelete, onMergeFrom }: EventD
               </div>
               <div>
                 <span className="text-gray-500">受傷：</span>
-                <span className="font-medium">{event.injured}</span>
+                <span className="font-medium">
+                  {event.injured}
+                  {event.severe_injured > 0 && (
+                    <span className="text-red-600">
+                      {formatSevereSuffix(event.severe_injured)}
+                    </span>
+                  )}
+                </span>
               </div>
               <div>
                 <span className="text-gray-500">受困：</span>

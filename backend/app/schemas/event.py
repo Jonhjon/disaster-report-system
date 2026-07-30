@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class EventBase(BaseModel):
@@ -15,6 +15,7 @@ class EventBase(BaseModel):
     occurred_at: datetime
     casualties: int = 0
     injured: int = 0
+    severe_injured: int = 0
     trapped: int = 0
     status: str = "reported"
 
@@ -37,6 +38,7 @@ class EventUpdate(BaseModel):
     status: str | None = None
     casualties: int | None = None
     injured: int | None = None
+    severe_injured: int | None = None
     trapped: int | None = None
     occurred_at: datetime | None = None
 
@@ -49,6 +51,17 @@ class EventUpdate(BaseModel):
                 "status must be one of: reported, in_progress, resolved"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_severe_injured(self) -> "EventUpdate":
+        # 兩者皆有提供時，重傷不可超過受傷總數
+        if (
+            self.severe_injured is not None
+            and self.injured is not None
+            and self.severe_injured > self.injured
+        ):
+            raise ValueError("severe_injured 不可超過 injured")
+        return self
 
 
 class EventListResponse(BaseModel):

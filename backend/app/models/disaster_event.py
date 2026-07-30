@@ -25,6 +25,8 @@ class DisasterEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     casualties: Mapped[int] = mapped_column(Integer, default=0)
     injured: Mapped[int] = mapped_column(Integer, default=0)
+    # 受傷者中的重傷人數（injured 的子集，severe_injured <= injured）
+    severe_injured: Mapped[int] = mapped_column(Integer, default=0)
     trapped: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="reported")
     report_count: Mapped[int] = mapped_column(Integer, default=1)

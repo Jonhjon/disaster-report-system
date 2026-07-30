@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DisasterEvent, EventStatus } from "../../types";
 import { fromDatetimeLocal, toDatetimeLocal } from "../../utils/format";
+import { clampSevereInjured } from "../../utils/injury";
 
 interface EventEditFormProps {
   event: DisasterEvent;
@@ -16,6 +17,7 @@ function EventEditForm({ event, onSave, onCancel }: EventEditFormProps) {
     description: event.description || "",
     casualties: event.casualties,
     injured: event.injured,
+    severe_injured: event.severe_injured,
     trapped: event.trapped,
     occurred_at: toDatetimeLocal(event.occurred_at),
   });
@@ -87,7 +89,7 @@ function EventEditForm({ event, onSave, onCancel }: EventEditFormProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="mb-1 block text-sm text-gray-600">死亡人數</label>
           <input
@@ -107,8 +109,35 @@ function EventEditForm({ event, onSave, onCancel }: EventEditFormProps) {
             min="0"
             className="w-full rounded border px-3 py-2 text-sm"
             value={form.injured}
+            onChange={(e) => {
+              const injured = Number(e.target.value);
+              setForm({
+                ...form,
+                injured,
+                // 重傷是受傷子集，受傷數下修時同步夾擠重傷數
+                severe_injured: clampSevereInjured(form.severe_injured, injured),
+              });
+            }}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm text-gray-600">
+            其中重傷人數
+          </label>
+          <input
+            type="number"
+            min="0"
+            max={form.injured}
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={form.severe_injured}
             onChange={(e) =>
-              setForm({ ...form, injured: Number(e.target.value) })
+              setForm({
+                ...form,
+                severe_injured: clampSevereInjured(
+                  Number(e.target.value),
+                  form.injured,
+                ),
+              })
             }
           />
         </div>

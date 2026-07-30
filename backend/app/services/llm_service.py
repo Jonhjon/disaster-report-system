@@ -26,12 +26,19 @@ SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你
 1. **災情種類**（必要）：人員受困、路段崩塌、淹水、小型土石流、建物受損、管線/電力受損、火警、其他
 2. **災情地點**（必要）：盡量引導到具體地址、路名或知名地標
 3. **發生時間**（必要）：什麼時候發生的，若民眾不確定請追問，確認無法提供後才可省略
-4. **傷亡狀況**（必要）：死亡（casualties）、受傷（injured）、受困（trapped）人數
-   - 受傷（injured）：有身體傷害的人員，含正在等待救護車的燒傷／受傷者
+4. **傷亡狀況**（必要）：死亡（casualties）、受傷（injured）、其中重傷（severe_injured）、受困（trapped）人數
+   - 受傷（injured）：有身體傷害的人員總數，含正在等待救護車的燒傷／受傷者
+   - 重傷（severe_injured）：受傷者「當中」傷勢嚴重者的人數，是 injured 的**子集**，
+     必然 severe_injured ≤ injured（例如 5 人受傷、其中 2 人重傷 → injured=5, severe_injured=2）
    - 受困（trapped）：無法自行脫離現場、需要搜救的人員（如被瓦礫壓住、受困電梯）
    - 「等待救援／救護」不等於受困，應計入 injured
-   - 若使用者描述「N 人輕傷、M 人中度受傷、K 人重傷」等分組傷者，必須將各組
-     加總後填入 injured（N+M 或 N+M+K），不是只填某一組或塞到 description。
+   - 若使用者描述「N 人輕傷、M 人中度受傷、K 人重傷」等分組傷者，injured 必須填**各組加總**
+     （N+M+K），severe_injured 只填其中的重傷組人數（K），不是只填某一組或塞到 description。
+
+   **傷亡人數的詢問順序（重要）**：
+   - 先詢問「共有多少人受傷」，取得 injured 總數
+   - 當 injured > 0 時，接著追問「受傷的人當中，有多少人是重傷」，取得 severe_injured
+   - 若 injured = 0（無人受傷），則 severe_injured 一律為 0，不需詢問重傷
 5. **詳細描述**：災情現場狀況
 6. **聯絡方式**（必要）：通報者姓名（reporter_name）與電話（reporter_phone）
 
@@ -82,7 +89,8 @@ SUBMIT_TOOL = {
             "location_text":  {"type": "string", "description": "地點的文字描述（必須為具體地址、路名或知名地標，不可只填縣市名稱）"},
             "severity":       {"type": "integer", "minimum": 1, "maximum": 5, "description": "嚴重程度，由 AI 依系統提示中的判斷規則推斷，不可詢問使用者"},
             "casualties":     {"type": "integer", "minimum": 0},
-            "injured":        {"type": "integer", "minimum": 0},
+            "injured":        {"type": "integer", "minimum": 0, "description": "受傷總人數（含重傷者）"},
+            "severe_injured": {"type": "integer", "minimum": 0, "description": "受傷者中的重傷人數，為 injured 的子集，不可超過 injured。injured=0 時必為 0"},
             "trapped":        {"type": "integer", "minimum": 0, "description": "受困人數：無法自行脫離現場、需要搜救的人員（如被瓦礫壓住、受困電梯）。等待救護車的傷者應計入 injured，不應計入 trapped"},
             "occurred_at":    {"type": "string", "description": "ISO 8601 格式"},
             "merge_event_id": {
@@ -183,11 +191,13 @@ async def reextract_numbers_from_description(description: str) -> dict:
                 "content": (
                     "從以下災情描述中萃取數字資訊。"
                     "只輸出一個 JSON 物件，不要說明或程式碼區塊。\n"
-                    "欄位：casualties(死亡), injured(受傷), trapped(受困) 為整數>=0，"
+                    "欄位：casualties(死亡), injured(受傷總數), severe_injured(受傷者中的重傷數), "
+                    "trapped(受困) 為整數>=0，"
                     "severity 為 1-5 整數（1=輕微~5=極嚴重）。"
                     "找不到則填 null。\n"
-                    "若描述中分組列出傷者（如「3 人輕傷、3 人重傷」），請將各組加總後填入 injured。\n"
-                    '格式：{"casualties":...,"injured":...,"trapped":...,"severity":...}\n\n'
+                    "若描述中分組列出傷者（如「3 人輕傷、3 人重傷」），injured 填各組加總（6），"
+                    "severe_injured 只填其中的重傷人數（3），且 severe_injured 不可超過 injured。\n"
+                    '格式：{"casualties":...,"injured":...,"severe_injured":...,"trapped":...,"severity":...}\n\n'
                     f"描述：{description}"
                 ),
             }],
@@ -199,10 +209,13 @@ async def reextract_numbers_from_description(description: str) -> dict:
             raw = parts[1].lstrip("json").strip() if len(parts) > 1 else raw
         data = json.loads(raw)
         result = {}
-        for key in ("casualties", "injured", "trapped"):
+        for key in ("casualties", "injured", "severe_injured", "trapped"):
             val = data.get(key)
             if val is not None:
                 result[key] = int(val)
+        # 重傷是受傷子集，夾擠避免超過受傷總數
+        if "severe_injured" in result and "injured" in result:
+            result["severe_injured"] = min(result["severe_injured"], result["injured"])
         val = data.get("severity")
         if val is not None:
             sev = int(val)

@@ -10,6 +10,7 @@ export interface DisasterEvent {
   occurred_at: string;
   casualties: number;
   injured: number;
+  severe_injured: number;
   trapped: number;
   status: EventStatus;
   report_count: number;
@@ -100,6 +101,7 @@ export interface EventUpdateData {
   status?: EventStatus;
   casualties?: number;
   injured?: number;
+  severe_injured?: number;
   trapped?: number;
   occurred_at?: string;
 }

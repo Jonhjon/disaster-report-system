@@ -30,6 +30,7 @@ export const DisasterEventSchema = z.object({
   occurred_at: z.string(),
   casualties: z.number(),
   injured: z.number(),
+  severe_injured: z.number(),
   trapped: z.number(),
   status: EventStatusSchema,
   report_count: z.number(),

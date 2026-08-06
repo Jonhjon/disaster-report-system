@@ -15,7 +15,38 @@ MAX_HISTORY = 20  # 保留最近 20 則訊息，避免 token 過多
 
 MODEL = settings.CLAUDE_MODEL
 
-SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你的任務是協助民眾通報災情。
+# 嚴重程度（severity 1~5）判斷規則：首次通報（SYSTEM_PROMPT）與合併後重新萃取
+# （reextract_numbers_from_description）共用同一份，避免兩把尺漂移。
+# 校準基準為「民眾逐案通報規模」而非附表二的國家通報升級門檻，用於儀表板相對分流排序。
+SEVERITY_RUBRIC = """依下列五步驟推斷 severity（1=最輕微、5=最嚴重），全程「命中最高者為準」，最後夾在 1~5：
+
+Step 1　人命傷亡級別（取各維度可達的最高級；「加總」= 死亡 + 重傷 + 受困，不含輕傷）
+- 5：死亡≥3　或　重傷≥8　或　受困≥8　或　加總≥15
+- 4：死亡 1–2　或　重傷 3–7　或　受困 3–7　或　加總 8–14
+- 3：重傷 1–2　或　受困 1–2　或　受傷(injured)≥5　或　加總 3–7
+- 2：受傷(injured) 1–4（且無死亡、無重傷、無受困）
+- 1：完全無傷亡、無受困
+
+Step 2　災害類型基準（floor，反映事件本質風險，即使 0 傷亡也有此下限）
+- 3：trapped（人員受困）、landslide（土石流）
+- 2：fire（火警）、road_collapse（路段崩塌）、building_damage（建物受損）、flooding（淹水）
+- 1：small_landslide（小型土石流）、utility_damage（管線/電力受損）、other（其他）
+
+Step 3　取 L_base = max(Step1 級別, Step2 級別)
+
+Step 4　描述關鍵字調整（僅依民眾「明確描述」判斷，只加不減，不得從模糊措辭臆測）
+- 先套 floor：描述含「整棟倒塌／活埋／掩埋／大量受困」→ 至少 4；
+  含「氣爆／爆炸／瓦斯外洩／受困待救／無法脫困」→ 至少 3
+- 再 +1（整體最多 +1）：描述含下列任一即整體 +1——
+  「持續擴大／延燒／蔓延／失控／無法控制」、「大範圍／多處／整條路／數十戶」、
+  「醫院／學校／養護機構／幼兒／行動不便」
+
+Step 5　severity = 夾在 [1,5] 的整數
+
+判斷範例：廚房小火0傷亡→2；火警5傷其中2重傷→3；土石流致1死→4；
+地震整棟倒塌3人受困→4；氣爆2死5傷其中3重傷→4；大範圍淹水無傷亡→3。"""
+
+SYSTEM_PROMPT = f"""你是「智慧災害通報系統」的 AI 通報助手。你的任務是協助民眾通報災情。
 
 ## 你的角色
 - 使用繁體中文
@@ -59,19 +90,7 @@ SYSTEM_PROMPT = """你是「智慧災害通報系統」的 AI 通報助手。你
 - 當使用者已提供主要災情資訊（地點、類型、時間、聯絡方式）但未明說「死亡 /受困」人數時，視為 0，直接提交。不要因為「想再確認」而反覆追問。
 
 ## 嚴重程度判斷規則（你自行決定，不要詢問使用者）
-依據行政院《災害緊急通報作業規定》附表二（甲乙丙級通報門檻）外推：
-- 定義「死傷合計」= 死亡（casualties）+ 受傷（injured）+ 受困（trapped）
-- 兩個維度（死亡、死傷合計）分別算出可達級別，取**較高**那一級
-
-| severity | 對應    | 死亡 ≥ | 死傷合計 ≥ |
-|----------|---------|--------|------------|
-| 5        | 甲級     | 10     | 30         |
-| 4        | 中間值   | 6      | 20         |
-| 3        | 乙級     | 3      | 10         |
-| 2        | 中間值   | 1      | 5          |
-| 1        | 丙級或以下 | (預設) | (預設)    |
-
-下限規則：若災害類型為小型局部事件（小型土石流、單戶火警）且無傷亡無受困，維持 severity = 1。"""
+{SEVERITY_RUBRIC}"""
 
 SUBMIT_TOOL = {
     "name": "submit_disaster_report",
@@ -87,7 +106,7 @@ SUBMIT_TOOL = {
             },
             "description":    {"type": "string", "description": "災情詳細描述"},
             "location_text":  {"type": "string", "description": "地點的文字描述（必須為具體地址、路名或知名地標，不可只填縣市名稱）"},
-            "severity":       {"type": "integer", "minimum": 1, "maximum": 5, "description": "嚴重程度，由 AI 依系統提示中的判斷規則推斷，不可詢問使用者"},
+            "severity":       {"type": "integer", "minimum": 1, "maximum": 5, "description": "嚴重程度 1~5，由 AI 依系統提示中的 SEVERITY_RUBRIC 五步規則推斷，不可詢問使用者"},
             "casualties":     {"type": "integer", "minimum": 0},
             "injured":        {"type": "integer", "minimum": 0, "description": "受傷總人數（含重傷者）"},
             "severe_injured": {"type": "integer", "minimum": 0, "description": "受傷者中的重傷人數，為 injured 的子集，不可超過 injured。injured=0 時必為 0"},
@@ -176,7 +195,9 @@ async def merge_event_descriptions(existing: str, new: str) -> str:
 
 
 async def reextract_numbers_from_description(description: str) -> dict:
-    """從合併後的描述重新萃取 casualties/injured/trapped/severity。
+    """從合併後的描述重新萃取 casualties/injured/severe_injured/trapped/severity。
+
+    severity 依系統統一的 SEVERITY_RUBRIC（五步規則）判斷，與首次通報同一把尺。
     失敗或找不到時回傳 {}，呼叫端保留原 max() 值。"""
     if not description:
         return {}
@@ -192,11 +213,11 @@ async def reextract_numbers_from_description(description: str) -> dict:
                     "從以下災情描述中萃取數字資訊。"
                     "只輸出一個 JSON 物件，不要說明或程式碼區塊。\n"
                     "欄位：casualties(死亡), injured(受傷總數), severe_injured(受傷者中的重傷數), "
-                    "trapped(受困) 為整數>=0，"
-                    "severity 為 1-5 整數（1=輕微~5=極嚴重）。"
+                    "trapped(受困) 為整數>=0。"
                     "找不到則填 null。\n"
                     "若描述中分組列出傷者（如「3 人輕傷、3 人重傷」），injured 填各組加總（6），"
                     "severe_injured 只填其中的重傷人數（3），且 severe_injured 不可超過 injured。\n"
+                    f"severity 為 1-5 整數，依下列規則判斷：\n{SEVERITY_RUBRIC}\n"
                     '格式：{"casualties":...,"injured":...,"severe_injured":...,"trapped":...,"severity":...}\n\n'
                     f"描述：{description}"
                 ),

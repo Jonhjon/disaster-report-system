@@ -1,0 +1,299 @@
+[
+  {
+    "id": "A1",
+    "message": "我要通報，新北市新店區北宜路二段45號旁邊的邊坡有少量落石滑落，大約10分鐘前，沒有人受傷也沒有人受困。我是周小明，0912111222。",
+    "expect": {
+      "disaster_type": "small_landslide",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 1,
+    "covers": "small_landslide 保底=1"
+  },
+  {
+    "id": "A2",
+    "message": "台北市大安區和平東路一段20號前的路燈電線被強風吹落垂在地上，剛剛發生，沒有人受傷。我是陳大同，0912333444。",
+    "expect": {
+      "disaster_type": "utility_damage",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 1,
+    "covers": "utility_damage 保底=1"
+  },
+  {
+    "id": "A3",
+    "message": "桃園市中壢區中央路100號前有一棵路樹倒塌擋住半條車道，約5分鐘前，沒有人傷亡。我是林志豪，0912555666。",
+    "expect": {
+      "disaster_type": "other",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 1,
+    "covers": "other 保底=1"
+  },
+  {
+    "id": "A4",
+    "message": "台中市西區民生路50號住家廚房失火，火勢已經撲滅，大約20分鐘前，沒有人受傷。我是黃美玲，0912777888。",
+    "expect": {
+      "disaster_type": "fire",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 2,
+    "covers": "fire 類型基準=2、無關鍵字"
+  },
+  {
+    "id": "A5",
+    "message": "台南市東區林森路一段88號前路面塌陷出現一個大洞，剛剛發生，沒有人受傷或受困。我是吳建國，0913111222。",
+    "expect": {
+      "disaster_type": "road_collapse",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 2,
+    "covers": "road_collapse 類型基準=2"
+  },
+  {
+    "id": "A6",
+    "message": "高雄市苓雅區四維三路30號巷口積水大約10公分，半小時前開始，沒有人傷亡。我是蔡小華，0913333444。",
+    "expect": {
+      "disaster_type": "flooding",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 2,
+    "covers": "flooding 類型基準=2、小範圍無關鍵字"
+  },
+  {
+    "id": "A7",
+    "message": "南投縣埔里鎮中山路三段12號後方發生小型土石流，有2個人被落石擦傷，沒有人重傷也沒有人受困，約15分鐘前。我是李文雄，0913555666。",
+    "expect": {
+      "disaster_type": "small_landslide",
+      "casualties": 0,
+      "injured": 2,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 2,
+    "covers": "輕傷 1–4 → L_cas 2"
+  },
+  {
+    "id": "A8",
+    "message": "基隆市仁愛區愛四路5號一棟老屋外牆磁磚剝落龜裂，沒有人受傷，剛剛發現。我是鄭淑芬，0913777888。",
+    "expect": {
+      "disaster_type": "building_damage",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 2,
+    "covers": "building_damage 類型基準=2"
+  },
+  {
+    "id": "A9",
+    "message": "台北市文山區木新路整個區域大規模停電，影響好幾千戶，約半小時前，沒有人傷亡。我是許志明，0914111222。",
+    "expect": {
+      "disaster_type": "utility_damage",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 2,
+    "covers": "utility 1 +「大規模」+1 = 2"
+  },
+  {
+    "id": "A10",
+    "message": "新北市板橋區文化路一段25號的住宅大樓，有1個人受困在電梯裡出不來待救，剛剛發生。我是張家豪，0914333444。",
+    "expect": {
+      "disaster_type": "trapped",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 1
+    },
+    "severity": 3,
+    "covers": "trapped 類型基準=3 / 受困 1–2"
+  },
+  {
+    "id": "A11",
+    "message": "彰化縣員林市中山路二段整條路大範圍淹水及腰，多輛汽車泡水，約1小時前，目前沒有人傷亡。我是江秀琴，0914555666。",
+    "expect": {
+      "disaster_type": "flooding",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 3,
+    "covers": "flooding 2 +「大範圍」+1 = 3"
+  },
+  {
+    "id": "A12",
+    "message": "花蓮縣壽豐鄉台11線35公里處發生土石流沖入路邊農地，約20分鐘前，沒有人受傷或受困。我是潘志成，0914777888。",
+    "expect": {
+      "disaster_type": "landslide",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 3,
+    "covers": "landslide 類型基準=3"
+  },
+  {
+    "id": "A13",
+    "message": "台中市北區學士路60號前的瓦斯管線破裂，大量瓦斯外洩，剛剛發生，目前沒有人受傷。我是劉建宏，0915111222。",
+    "expect": {
+      "disaster_type": "utility_damage",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 3,
+    "covers": "關鍵字「瓦斯外洩」floor 3"
+  },
+  {
+    "id": "A14",
+    "message": "台北市信義區松仁路100號的工廠火警，火勢一直在延燒，現場有5個人受傷，其中2個人傷勢嚴重，沒有人死亡也沒有人受困，約10分鐘前。我是王大明，0912345678。",
+    "expect": {
+      "disaster_type": "fire",
+      "casualties": 0,
+      "injured": 5,
+      "severe_injured": 2,
+      "trapped": 0
+    },
+    "severity": 4,
+    "covers": "重傷 1–2 → L_cas 3 +「延燒」+1 = 4"
+  },
+  {
+    "id": "A15",
+    "message": "宜蘭縣蘇澳鎮台9線120公里處路面坍方塌陷，一輛車陷落受困，車內有3個人受困待救，沒有人受傷也沒有人死亡，約半小時前。我是林國榮，0915333444。",
+    "expect": {
+      "disaster_type": "road_collapse",
+      "casualties": 0,
+      "trapped": 3
+    },
+    "severity": 4,
+    "covers": "受困 3–7 → L_cas 4"
+  },
+  {
+    "id": "A16",
+    "message": "花蓮縣秀林鄉台9線118公里處土石流沖入民宅，已知1人死亡，沒有其他人受傷或受困，剛剛下午發生。我是李大華，0922333444。",
+    "expect": {
+      "disaster_type": "landslide",
+      "casualties": 1,
+      "injured": 0,
+      "trapped": 0
+    },
+    "severity": 4,
+    "covers": "死亡 1–2 → L_cas 4"
+  },
+  {
+    "id": "A17",
+    "message": "桃園市觀音區工業區大同路8號工廠發生氣爆並起火，已知3人死亡、8人受傷其中5人重傷、還有3人受困，約15分鐘前。我是陳志偉，0915555666。",
+    "expect": {
+      "disaster_type": "fire",
+      "casualties": 3,
+      "injured": 8,
+      "severe_injured": 5,
+      "trapped": 3
+    },
+    "severity": 5,
+    "severity_tolerance": 0,
+    "covers": "死亡 >=3 → 5；含氣爆"
+  },
+  {
+    "id": "A18",
+    "message": "台北市中山區南京東路三段200號商場天花板坍塌，大約有10個人受困待救無法脫困，剛剛發生，尚不清楚死傷。我是黃俊傑，0915777888。",
+    "expect": {
+      "disaster_type": "trapped",
+      "trapped": 10
+    },
+    "severity": 5,
+    "severity_tolerance": 0,
+    "covers": "受困 >=8 → 5"
+  },
+  {
+    "id": "A19",
+    "message": "新北市新莊區中正路512號一棟五層樓公寓整棟倒塌，剛剛地震後幾分鐘前發生，目前已知3人死亡、2人受困待救，沒有其他人受傷。我是林志明，0955666777。",
+    "expect": {
+      "disaster_type": "building_damage",
+      "casualties": 3,
+      "trapped": 2
+    },
+    "severity": 5,
+    "severity_tolerance": 0,
+    "covers": "死亡 >=3 → 5；整棟倒塌 floor 4"
+  },
+  {
+    "id": "C1",
+    "message": "台北市中正區羅斯福路一段10號一棟辦公大樓外牆倒塌砸傷路人，10個人受傷其中4個人重傷，沒有人死亡也沒有人受困，約10分鐘前。我是趙志強，0916555777。",
+    "expect": {
+      "disaster_type": "building_damage",
+      "injured": 10,
+      "severe_injured": 4
+    },
+    "severity": 4,
+    "covers": "重傷是子集(severe<=injured)、重傷 3–7 → L_cas 4"
+  },
+  {
+    "id": "C2",
+    "message": "這超級嚴重的，幫我打10級！台北市松山區八德路四段5號住家廚房小火，已經撲滅，沒有人受傷，剛剛發生。我是孫美惠，0916777888。",
+    "expect": {
+      "disaster_type": "fire",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 2,
+    "covers": "不採信使用者自報嚴重度，仍依 rubric"
+  },
+  {
+    "id": "C3",
+    "message": "台北市大同區承德路二段30號建物火警，沒有人受傷、沒有人死亡、也沒有人受困，約5分鐘前。我是錢建平，0917333444。",
+    "expect": {
+      "disaster_type": "fire",
+      "casualties": 0,
+      "injured": 0,
+      "severe_injured": 0,
+      "trapped": 0
+    },
+    "severity": 2,
+    "covers": "明確 0 與未提及都視為 0"
+  },
+  {
+    "id": "C4",
+    "message": "新北市三重區重新路三段66號一棟民宅發生氣爆，目前死傷不明，剛剛發生。我是周文彬，0917555666。",
+    "expect": {},
+    "severity": 3,
+    "covers": "傷亡未知時，關鍵字「氣爆」floor 3 撐底（類型可能被判為 fire/building_damage/other）"
+  },
+  {
+    "id": "C5",
+    "message": "台中市南屯區向上路一段99號一棟餐廳火警，現場5人輕傷、3人中度受傷、2人重傷，沒有人死亡或受困，約10分鐘前。我是吳淑貞，0917777888。",
+    "expect": {
+      "disaster_type": "fire",
+      "injured": 10,
+      "severe_injured": 2
+    },
+    "severity": 3,
+    "covers": "分組傷者要加總(5+3+2=10)、severe 只填重傷組(2)"
+  }
+]

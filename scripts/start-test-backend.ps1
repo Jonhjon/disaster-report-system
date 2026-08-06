@@ -7,7 +7,20 @@ $BackendDir = Join-Path $ProjectDir 'backend'
 $VenvPython = Join-Path $BackendDir 'venv\Scripts\python.exe'
 
 $TestPort = 8001
-$TestDbUrl = 'postgresql://postgres:Cm3023203@127.0.0.1:5432/disaster_report_test'
+
+# 從 backend/.env.test 讀取測試 DATABASE_URL（避免在腳本硬寫 DB 密碼）
+$TestEnvFile = Join-Path $BackendDir '.env.test'
+if (-not (Test-Path $TestEnvFile)) {
+    Write-Host "[錯誤] 找不到 $TestEnvFile" -ForegroundColor Red
+    exit 1
+}
+$TestEnvContent = Get-Content $TestEnvFile -Raw
+if ($TestEnvContent -match '(?m)^\s*DATABASE_URL\s*=\s*["'']?([^"''\r\n]+)["'']?\s*$') {
+    $TestDbUrl = $Matches[1].Trim()
+} else {
+    Write-Host "[錯誤] $TestEnvFile 內找不到 DATABASE_URL" -ForegroundColor Red
+    exit 1
+}
 
 Write-Host '=== 啟動測試後端 ===' -ForegroundColor Cyan
 Write-Host "  Port:        $TestPort" -ForegroundColor Gray

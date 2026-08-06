@@ -69,12 +69,17 @@ if ($alreadyRunning) {
 
 # 1. 檢查 .env 設定
 $EnvFile = Join-Path $BackendDir '.env'
+$dbPassword = $null
 if (Test-Path $EnvFile) {
     $EnvContent = Get-Content $EnvFile -Raw
     # 容許值前後有引號或空白：擷取 ANTHROPIC_API_KEY 的值再判斷
     $apiKey = $null
     if ($EnvContent -match '(?m)^\s*ANTHROPIC_API_KEY\s*=\s*["'']?([^"''\r\n]+)["'']?\s*$') {
         $apiKey = $Matches[1].Trim()
+    }
+    # 從 DATABASE_URL 擷取 DB 密碼（供下方重設容器密碼用，避免在腳本硬寫明文）
+    if ($EnvContent -match 'postgresql://[^:]+:([^@]+)@') {
+        $dbPassword = $Matches[1]
     }
     if (-not $apiKey -or $apiKey -eq 'your-api-key-here') {
         Write-Host ''
@@ -130,11 +135,15 @@ Start-Sleep -Seconds 10
 
 # 重設資料庫密碼（確保密碼始終與 .env 一致）
 Write-Host '      確認資料庫認證...' -ForegroundColor DarkGray
-& "$DockerPath\docker.exe" exec disaster_db psql -U postgres -c "ALTER USER postgres PASSWORD 'Cm3023203';" 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host '      資料庫認證確認完成' -ForegroundColor Green
+if ($dbPassword) {
+    & "$DockerPath\docker.exe" exec disaster_db psql -U postgres -c "ALTER USER postgres PASSWORD '$dbPassword';" 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '      資料庫認證確認完成' -ForegroundColor Green
+    } else {
+        Write-Host '      [!] 資料庫認證設定失敗，請手動檢查 Docker 容器狀態' -ForegroundColor Red
+    }
 } else {
-    Write-Host '      [!] 資料庫認證設定失敗，請手動檢查 Docker 容器狀態' -ForegroundColor Red
+    Write-Host '      [!] 無法從 backend/.env 的 DATABASE_URL 取得 DB 密碼，略過密碼重設' -ForegroundColor Red
 }
 
 # 4. 執行 Alembic 遷移（建立資料表）
@@ -254,7 +263,7 @@ Write-Host '  民眾端：    http://localhost:5173' -ForegroundColor Cyan
 Write-Host '  管理中心端：http://localhost:5174' -ForegroundColor Cyan
 Write-Host '  API 文件：  http://localhost:8000/docs' -ForegroundColor Cyan
 Write-Host ''
-Write-Host '管理中心預設帳號：admin / admin123' -ForegroundColor Yellow
+Write-Host '管理中心預設帳號：admin（密碼見本機 backend/.env）' -ForegroundColor Yellow
 Write-Host ''
 
 Start-Sleep -Seconds 5

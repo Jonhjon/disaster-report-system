@@ -115,3 +115,20 @@ def test_get_event_reports_with_auth(auth_client, mock_db):
     response = auth_client.get(f"/api/events/{uuid4()}/reports")
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+# ---------------------------------------------------------------------------
+# GET /api/events/statistics、GET /api/events/export.csv — 需要認證
+#
+# 注意：撰寫本測試時 app/api/events.py 尚未定義這兩支路由（見
+# tests/test_statistics.py 檔頭說明），故目前拿到的會是 404 而非 401，
+# 這兩條測試現在會失敗；等路由補上後才會驗證到真正的認證行為。
+# ---------------------------------------------------------------------------
+def test_statistics_requires_auth(client):
+    response = client.get("/api/events/statistics")
+    assert response.status_code == 401
+
+
+def test_export_csv_requires_auth(client):
+    response = client.get("/api/events/export.csv")
+    assert response.status_code == 401

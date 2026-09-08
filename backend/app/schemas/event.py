@@ -27,6 +27,8 @@ class EventResponse(EventBase):
     occurred_at_approximate: bool = False
     created_at: datetime
     updated_at: datetime
+    # 狀態最近一次轉為 resolved 的時間；此欄位上線前的既有事件為 None
+    resolved_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

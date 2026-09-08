@@ -32,6 +32,12 @@ class DisasterEvent(Base):
     report_count: Mapped[int] = mapped_column(Integer, default=1)
     location_approximate: Mapped[bool] = mapped_column(Boolean, default=False)
     occurred_at_approximate: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 狀態最近一次轉為 resolved 的時間。統計頁的「結案耗時」以此為準，
+    # 不用 updated_at（它有 onupdate，任何編輯或事件合併都會把它推後）。
+    # 此欄位上線前既有的已結案事件為 NULL，不納入統計。
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

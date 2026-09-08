@@ -1,5 +1,5 @@
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from geoalchemy2.functions import ST_X, ST_Y
@@ -34,7 +34,57 @@ def _event_to_response(event: DisasterEvent) -> EventResponse:
         occurred_at_approximate=event.occurred_at_approximate,
         created_at=event.created_at,
         updated_at=event.updated_at,
+        resolved_at=event.resolved_at,
     )
+
+
+def apply_event_filters(
+    query,
+    *,
+    search: str | None = None,
+    disaster_type: str | None = None,
+    severity_min: int | None = None,
+    severity_max: int | None = None,
+    status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    date_to_exclusive: bool = False,
+):
+    """套用事件篩選條件（get_events / 統計 / CSV 匯出共用）。
+
+    收 Query 回 Query，不碰 Session，因此可套在任何 entity 組合上
+    ——列表用的 (DisasterEvent, ST_Y, ST_X)，或統計用的純聚合查詢。
+    共用同一份篩選是為了保證「統計頁的數字」與「災情列表的清單」
+    永遠來自同一組資料。
+    """
+    if search:
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        query = query.filter(
+            or_(
+                DisasterEvent.title.ilike(pattern),
+                DisasterEvent.description.ilike(pattern),
+                DisasterEvent.location_text.ilike(pattern),
+            )
+        )
+    if disaster_type:
+        query = query.filter(DisasterEvent.disaster_type == disaster_type)
+    if severity_min is not None:
+        query = query.filter(DisasterEvent.severity >= severity_min)
+    if severity_max is not None:
+        query = query.filter(DisasterEvent.severity <= severity_max)
+    if status:
+        query = query.filter(DisasterEvent.status == status)
+    if date_from:
+        query = query.filter(DisasterEvent.occurred_at >= date_from)
+    if date_to:
+        operator = (
+            DisasterEvent.occurred_at < date_to
+            if date_to_exclusive
+            else DisasterEvent.occurred_at <= date_to
+        )
+        query = query.filter(operator)
+    return query
 
 
 def get_events(
@@ -59,28 +109,16 @@ def get_events(
         ST_X(DisasterEvent.location).label("lng"),
     )
 
-    if search:
-        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{escaped}%"
-        query = query.filter(
-            or_(
-                DisasterEvent.title.ilike(pattern),
-                DisasterEvent.description.ilike(pattern),
-                DisasterEvent.location_text.ilike(pattern),
-            )
-        )
-    if disaster_type:
-        query = query.filter(DisasterEvent.disaster_type == disaster_type)
-    if severity_min is not None:
-        query = query.filter(DisasterEvent.severity >= severity_min)
-    if severity_max is not None:
-        query = query.filter(DisasterEvent.severity <= severity_max)
-    if status:
-        query = query.filter(DisasterEvent.status == status)
-    if date_from:
-        query = query.filter(DisasterEvent.occurred_at >= date_from)
-    if date_to:
-        query = query.filter(DisasterEvent.occurred_at <= date_to)
+    query = apply_event_filters(
+        query,
+        search=search,
+        disaster_type=disaster_type,
+        severity_min=severity_min,
+        severity_max=severity_max,
+        status=status,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
     # Count total before pagination
     total = query.count()
@@ -136,17 +174,33 @@ def get_event_by_id(db: Session, event_id: UUID) -> EventResponse | None:
 
 
 def update_event(db: Session, event_id: UUID, data: EventUpdate) -> EventResponse | None:
-    event = db.query(DisasterEvent).filter(DisasterEvent.id == event_id).first()
+    event = (
+        db.query(DisasterEvent)
+        .filter(DisasterEvent.id == event_id)
+        .with_for_update()
+        .first()
+    )
     if not event:
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+    # 只在真的要改 status 時才讀舊值，避免對未提供該欄位的物件做多餘存取
+    previous_status = event.status if "status" in update_data else None
+
     for key, value in update_data.items():
         setattr(event, key, value)
 
     # 管理員手動指定時間 → 視為精確時間，清除系統推斷旗標
     if "occurred_at" in update_data:
         event.occurred_at_approximate = False
+
+    # 記錄結案時戳，供統計頁計算結案耗時
+    if "status" in update_data:
+        if previous_status != "resolved" and event.status == "resolved":
+            event.resolved_at = datetime.now(timezone.utc)
+        elif previous_status == "resolved" and event.status != "resolved":
+            # 結案被撤回，不留下假的結案時戳（以最新一次結案為準）
+            event.resolved_at = None
 
     db.commit()
     db.refresh(event)

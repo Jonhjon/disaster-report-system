@@ -1,7 +1,12 @@
+import csv
+import io
 from datetime import datetime, timezone
+from typing import Literal
+from urllib.parse import quote
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -16,13 +21,26 @@ from app.schemas.event import (
     EventUpdate,
 )
 from app.schemas.report import ReportListResponse, serialize_report
-from app.services import event_service
+from app.schemas.statistics import StatisticsResponse
+from app.services import event_service, stats_service
 from app.services.geocoding_service import geocode_address
 from app.services.llm_service import merge_event_descriptions, reextract_numbers_from_description
-from app.api.deps import get_current_user
+from app.api.deps import get_authenticated_statistics_db, get_current_user
 from app.models.user import User
 
 router = APIRouter()
+
+
+def _require_aware_date_filters(
+    date_from: datetime | None, date_to: datetime | None
+) -> None:
+    """Reject ambiguous datetimes before they reach PostgreSQL."""
+    for name, value in (("date_from", date_from), ("date_to", date_to)):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{name} 必須包含 UTC offset，例如 +08:00",
+            )
 
 
 @router.get("/events", response_model=EventListResponse)
@@ -72,6 +90,111 @@ def map_events(
         status=status,
     )
     return {"items": items}
+
+
+# ---------------------------------------------------------------------------
+# 統計與匯出（管理端專用）
+#
+# 這兩條路由「必須」宣告在 /events/{event_id} 之前。FastAPI 依註冊順序比對，
+# 若放在後面，"statistics" 會被拿去匹配 event_id: UUID 而回 422（訊息是
+# UUID 格式錯誤，不是 404），非常容易誤判成前端傳錯參數。
+# ---------------------------------------------------------------------------
+@router.get("/events/statistics", response_model=StatisticsResponse)
+def event_statistics(
+    search: str | None = None,
+    disaster_type: str | None = None,
+    severity_min: int | None = None,
+    severity_max: int | None = None,
+    status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    bucket: Literal["day", "week", "month"] = "day",
+    tz: str = "Asia/Taipei",
+    db: Session = Depends(get_authenticated_statistics_db),
+):
+    _require_aware_date_filters(date_from, date_to)
+    try:
+        return stats_service.get_statistics(
+            db,
+            search=search,
+            disaster_type=disaster_type,
+            severity_min=severity_min,
+            severity_max=severity_max,
+            status=status,
+            date_from=date_from,
+            date_to=date_to,
+            bucket=bucket,
+            tz=tz,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/events/export.csv")
+def export_events_csv(
+    search: str | None = None,
+    disaster_type: str | None = None,
+    severity_min: int | None = None,
+    severity_max: int | None = None,
+    status: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    sort_by: str = "occurred_at",
+    sort_order: str = "desc",
+    limit: int = Query(default=10000, ge=1, le=10000),
+    tz: str = "Asia/Taipei",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_aware_date_filters(date_from, date_to)
+    try:
+        rows = stats_service.build_export_rows(
+            db,
+            search=search,
+            disaster_type=disaster_type,
+            severity_min=severity_min,
+            severity_max=severity_max,
+            status=status,
+            date_from=date_from,
+            date_to=date_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            # 多取一筆，才能區分「剛好等於上限」與「確實遭截斷」。
+            limit=limit + 1,
+            tz=tz,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # 刻意先在端點內把列全部取出再寫成字串，不用 StreamingResponse：
+    # FastAPI 的 yield 依賴會在回應送出前關閉 session，而串流 generator
+    # 是在端點回傳之後才被迭代，屆時 session 已經關掉了。
+    data_rows = rows[1:]
+    truncated = len(data_rows) > limit
+    if truncated:
+        rows = [*rows[:1], *data_rows[:limit]]
+
+    buffer = io.StringIO()
+    csv.writer(buffer, lineterminator="\r\n").writerows(rows)
+    body = buffer.getvalue().encode("utf-8-sig")  # BOM：Excel 開中文才不亂碼
+
+    stamp = datetime.now(ZoneInfo(tz)).strftime("%Y%m%d_%H%M")
+    exported_rows = max(len(rows) - 1, 0)
+    # HTTP header 在 Starlette 是 latin-1 編碼，中文檔名直接放進 filename=
+    # 會丟 UnicodeEncodeError 讓整個回應變 500，必須走 RFC 5987。
+    disposition = (
+        f'attachment; filename="disaster-events-{stamp}.csv"; '
+        f"filename*=UTF-8''{quote(f'災情事件明細_{stamp}.csv')}"
+    )
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": disposition,
+            "X-Total-Rows": str(exported_rows),
+            "X-Truncated": "true" if truncated else "false",
+        },
+    )
 
 
 @router.get("/events/{event_id}", response_model=EventResponse)

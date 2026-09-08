@@ -4,16 +4,13 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, get_statistics_db
 from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User:
+def _authenticate_user(token: str, db: Session) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="無效的認證憑證",
@@ -33,3 +30,19 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
+
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    return _authenticate_user(token, db)
+
+
+def get_authenticated_statistics_db(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_statistics_db),
+) -> Session:
+    """Authenticate and return the same snapshot session used by statistics."""
+    _authenticate_user(token, db)
+    return db

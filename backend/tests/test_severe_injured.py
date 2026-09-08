@@ -374,7 +374,9 @@ def test_update_event_persists_severe_injured(mock_db):
             object.__setattr__(self, key, value)
 
     fake = FakeEvent()
-    mock_db.query.return_value.filter.return_value.first.return_value = fake
+    query = mock_db.query.return_value.filter.return_value
+    query.with_for_update.return_value = query
+    query.first.return_value = fake
 
     with patch("app.services.event_service.get_event_by_id") as mock_get:
         mock_get.return_value = MagicMock()

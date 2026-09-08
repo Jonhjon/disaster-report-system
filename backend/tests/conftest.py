@@ -18,10 +18,10 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import get_db
+from app.database import get_db, get_statistics_db
 from app.main import app
 from app.schemas.event import EventResponse
-from app.api.deps import get_current_user
+from app.api.deps import get_authenticated_statistics_db, get_current_user
 from app.models.user import User
 from app.services.auth_service import create_access_token
 
@@ -84,6 +84,7 @@ def test_user():
 @pytest.fixture
 def client(mock_db):
     app.dependency_overrides[get_db] = lambda: mock_db
+    app.dependency_overrides[get_statistics_db] = lambda: mock_db
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
@@ -93,7 +94,9 @@ def client(mock_db):
 def auth_client(mock_db, test_user):
     """帶認證的 TestClient，override get_current_user"""
     app.dependency_overrides[get_db] = lambda: mock_db
+    app.dependency_overrides[get_statistics_db] = lambda: mock_db
     app.dependency_overrides[get_current_user] = lambda: test_user
+    app.dependency_overrides[get_authenticated_statistics_db] = lambda: mock_db
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

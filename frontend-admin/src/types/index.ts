@@ -144,6 +144,82 @@ export const DISASTER_TYPE_COLORS: Record<DisasterType, string> = {
   other: "#95a5a6",
 };
 
+// ---- 統計 ----
+
+// key 對 disaster_type / status 為字串碼，對 severity 為 "1".."5"。
+// 刻意用 string 而非 DisasterType：資料庫沒有 disaster_type 的 CheckConstraint，
+// 可能存在枚舉清單以外的值，用聯合型別會讓 zod 驗證整頁掛掉。
+export interface CategoryCount {
+  key: string;
+  count: number;
+  percentage: number;
+}
+
+export interface TrendPoint {
+  bucket_start: string; // YYYY-MM-DD（使用者時區的當地日期）
+  count: number;
+}
+
+export interface CrossTabCell {
+  disaster_type: string;
+  severity: number;
+  count: number;
+}
+
+export interface ResolutionStats {
+  resolved_count: number;
+  legacy_excluded_count: number;
+  avg_hours: number | null;
+  median_hours: number | null;
+  p90_hours: number | null;
+  method_note: string;
+}
+
+export interface StatisticsSummary {
+  total_events: number;
+  total_report_count: number;
+  total_casualties: number;
+  total_injured: number;
+  total_severe_injured: number;
+  total_trapped: number;
+  avg_severity: number | null;
+  high_severity_count: number;
+  unresolved_count: number;
+}
+
+export type TrendBucket = "day" | "week" | "month";
+
+export interface EventStatistics {
+  summary: StatisticsSummary;
+  by_disaster_type: CategoryCount[];
+  by_severity: CategoryCount[];
+  by_status: CategoryCount[];
+  trend: TrendPoint[];
+  cross_tab: CrossTabCell[];
+  resolution: ResolutionStats;
+  bucket: string;
+  timezone: string;
+  time_field: string;
+  generated_at: string;
+}
+
+export interface StatisticsQuery {
+  search?: string;
+  disaster_type?: string;
+  severity_min?: number;
+  severity_max?: number;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  bucket?: TrendBucket;
+}
+
+export const TREND_BUCKET_LABELS: Record<TrendBucket, string> = {
+  day: "日",
+  week: "週（週一起算）",
+  month: "月",
+};
+
 export interface User {
   id: string;
   username: string;

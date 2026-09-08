@@ -9,6 +9,7 @@ import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import EventListPage from "./pages/EventListPage";
 import EventDetailPage from "./pages/EventDetailPage";
+import StatisticsPage from "./pages/StatisticsPage";
 import LLMLogsPage from "./pages/LLMLogsPage";
 import HelpPage from "./pages/HelpPage";
 
@@ -40,6 +41,7 @@ function App() {
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/events" element={<EventListPage />} />
                     <Route path="/events/:id" element={<EventDetailPage />} />
+                    <Route path="/statistics" element={<StatisticsPage />} />
                     <Route path="/llm-logs" element={<LLMLogsPage />} />
                     <Route path="/help" element={<HelpPage />} />
                   </Routes>

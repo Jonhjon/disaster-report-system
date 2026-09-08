@@ -1,9 +1,10 @@
 import { NavLink } from "react-router-dom";
-import { Map, ClipboardList, BarChart2, HelpCircle, type LucideIcon } from "lucide-react";
+import { Map, ClipboardList, BarChart2, PieChart, HelpCircle, type LucideIcon } from "lucide-react";
 
 const navItems: { to: string; label: string; Icon: LucideIcon }[] = [
   { to: "/", label: "地圖總覽", Icon: Map },
   { to: "/events", label: "災情列表", Icon: ClipboardList },
+  { to: "/statistics", label: "統計分析", Icon: PieChart },
   { to: "/llm-logs", label: "LLM 日誌", Icon: BarChart2 },
   { to: "/help", label: "使用說明", Icon: HelpCircle },
 ];

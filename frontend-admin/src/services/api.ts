@@ -4,12 +4,16 @@ import type {
   DisasterReport,
   EventListResponse,
   EventMapItem,
+  EventStatistics,
   EventUpdateData,
+  StatisticsQuery,
 } from "../types";
 import {
   DisasterEventSchema,
   EventListResponseSchema,
+  EventStatisticsSchema,
 } from "../schemas";
+import { dateInTimeZone } from "../utils/format";
 
 const BASE_URL = "/api";
 
@@ -42,7 +46,17 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error("認證已過期，請重新登入");
   }
   if (!response.ok) {
-    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    let detail: unknown;
+    try {
+      detail = (await response.json())?.detail;
+    } catch {
+      // Non-JSON errors fall back to the HTTP status below.
+    }
+    throw new Error(
+      typeof detail === "string"
+        ? detail
+        : `API Error: ${response.status} ${response.statusText}`
+    );
   }
   return response.json();
 }
@@ -150,4 +164,63 @@ export async function mergeEvents(
 
 export async function getLLMLogs(): Promise<Record<string, unknown>[]> {
   return fetchJSON("/llm-logs");
+}
+
+function toQueryString(params: object): string {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") {
+      searchParams.set(key, String(value));
+    }
+  });
+  return searchParams.toString();
+}
+
+export async function getEventStatistics(
+  params: StatisticsQuery,
+  signal?: AbortSignal
+): Promise<EventStatistics> {
+  const raw = await fetchJSON<unknown>(
+    `/events/statistics?${toQueryString(params)}`,
+    { signal }
+  );
+  return parseWith(EventStatisticsSchema, raw);
+}
+
+/**
+ * 下載事件明細 CSV。
+ *
+ * 不能用 <a download href> 或 window.open：那樣不會帶 Authorization header，
+ * 後端回 401 之後 fetchJSON 的 401 分支會清掉 token 並導向 /login
+ * ——使用者按下匯出的結果會是「被登出」。必須自己 fetch 後轉成 blob。
+ */
+export async function downloadEventsCsv(
+  params: Omit<StatisticsQuery, "bucket"> & { sort_by?: string; sort_order?: string }
+): Promise<{ blob: Blob; filename: string; truncated: boolean }> {
+  const token = localStorage.getItem("token");
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(
+    `${BASE_URL}/events/export.csv?${toQueryString(params)}`,
+    { headers }
+  );
+
+  if (response.status === 401) {
+    localStorage.removeItem("token");
+    window.location.href = "/login";
+    throw new Error("認證已過期，請重新登入");
+  }
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+  }
+
+  const stamp = dateInTimeZone(new Date(), "Asia/Taipei");
+  return {
+    blob: await response.blob(),
+    filename: `災情事件明細_${stamp}.csv`,
+    truncated: response.headers.get("X-Truncated") === "true",
+  };
 }

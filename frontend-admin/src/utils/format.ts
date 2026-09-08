@@ -16,3 +16,35 @@ export function toDatetimeLocal(iso: string): string {
 export function fromDatetimeLocal(local: string): string {
   return new Date(local).toISOString();
 }
+
+const REPORT_TIMEZONE_OFFSET = "+08:00";
+
+function nextCalendarDate(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+// 報表固定使用 Asia/Taipei；不可依賴管理員電腦的瀏覽器時區。
+export function dateInputToIsoStart(value: string): string {
+  return new Date(`${value}T00:00:00.000${REPORT_TIMEZONE_OFFSET}`).toISOString();
+}
+
+// 結束值是隔日台北午夜，後端以 `< date_to` 套用半開區間。
+export function dateInputToIsoEnd(value: string): string {
+  return new Date(
+    `${nextCalendarDate(value)}T00:00:00.000${REPORT_TIMEZONE_OFFSET}`
+  ).toISOString();
+}
+
+export function dateInTimeZone(
+  value: Date | string,
+  timeZone = "Asia/Taipei"
+): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+}

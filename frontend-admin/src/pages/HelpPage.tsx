@@ -1,4 +1,4 @@
-import { Home, Map, ClipboardList, BarChart2 } from "lucide-react";
+import { Home, Map, ClipboardList, BarChart2, PieChart } from "lucide-react";
 import { DISASTER_TYPE_LABELS, DISASTER_TYPE_COLORS, DisasterType } from "../types/index";
 
 function HelpPage() {
@@ -54,6 +54,32 @@ function HelpPage() {
           </li>
           <li>
             <span className="font-medium">編輯與刪除</span>：在詳細頁面可更新事件狀態、傷亡人數，或刪除事件。
+          </li>
+        </ul>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-gray-800">
+          <PieChart size={18} aria-hidden="true" />統計分析
+        </h2>
+        <ul className="ml-4 list-disc space-y-2 text-sm text-gray-700">
+          <li>
+            <span className="font-medium">篩選範圍</span>：所有統計都套用同一組篩選條件（關鍵字、災害類型、狀態、最低嚴重度、日期區間），與災情列表的篩選邏輯共用，因此兩頁看到的母體一致。
+          </li>
+          <li>
+            <span className="font-medium">時間依據</span>：統計依「事件發生時間」而非建立時間計算，並以台北時間切分日期。趨勢圖可切換日／週／月分桶；週分桶為週一起算。
+          </li>
+          <li>
+            <span className="font-medium">累計通報次數</span>：為各事件通報次數的總和。事件合併時通報數會累加，因此此數字不等於通報訊息的實際筆數。
+          </li>
+          <li>
+            <span className="font-medium">結案耗時</span>：以「事件建立時間 → 狀態最近一次轉為已結案的時間」計算。若案件撤回結案後再次結案，會以新的結案時間為準。系統加入結案時戳之前的舊事件沒有這項資料，會被排除並在畫面上標示排除筆數。因少數離群值會拉高平均，請優先參考中位數與樣本數。
+          </li>
+          <li>
+            <span className="font-medium">匯出報告</span>：「匯出統計摘要」下載本頁所有統計數字；「匯出事件明細」下載篩選後的逐筆事件。兩者皆為 UTF-8 CSV，可直接用 Excel 開啟。若明細筆數達單次上限，畫面會提示資料不完整。
+          </li>
+          <li>
+            <span className="font-medium">佔比</span>：四捨五入至小數一位，各項加總未必剛好等於 100%。
           </li>
         </ul>
       </div>
